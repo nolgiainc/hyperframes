@@ -10,6 +10,14 @@ export type {
   PropertyPanelProps,
 } from "./propertyPanelTypes";
 
+export function stripQueryAndHash(value: string): string {
+  const queryIndex = value.indexOf("?");
+  const hashIndex = value.indexOf("#");
+  if (queryIndex < 0) return hashIndex < 0 ? value : value.slice(0, hashIndex);
+  if (hashIndex < 0) return value.slice(0, queryIndex);
+  return value.slice(0, Math.min(queryIndex, hashIndex));
+}
+
 /* ------------------------------------------------------------------ */
 /*  Font types & constants (shared by font and section modules)        */
 /* ------------------------------------------------------------------ */

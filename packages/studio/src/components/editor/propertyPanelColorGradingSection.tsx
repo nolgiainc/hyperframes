@@ -22,6 +22,7 @@ import {
 } from "../../utils/studioPendingEdits";
 import type { DomEditSelection } from "./domEditing";
 import { ColorGradingControls } from "./propertyPanelColorGradingControls";
+import { stripQueryAndHash } from "./propertyPanelHelpers";
 import { Section } from "./propertyPanelPrimitives";
 
 const COLOR_GRADING_DATA_KEY = HF_COLOR_GRADING_ATTR.replace(/^data-/, "");
@@ -53,14 +54,6 @@ interface MediaMetadata {
 interface MediaMetadataResponse {
   path: string;
   metadata: MediaMetadata;
-}
-
-function stripQueryAndHash(value: string): string {
-  const queryIndex = value.indexOf("?");
-  const hashIndex = value.indexOf("#");
-  if (queryIndex < 0) return hashIndex < 0 ? value : value.slice(0, hashIndex);
-  if (hashIndex < 0) return value.slice(0, queryIndex);
-  return value.slice(0, Math.min(queryIndex, hashIndex));
 }
 
 function stripPreviewAssetPath(src: string, projectId: string): string | null {

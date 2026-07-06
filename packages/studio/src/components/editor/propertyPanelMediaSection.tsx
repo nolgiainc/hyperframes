@@ -9,6 +9,7 @@ import {
   LABEL,
   parseNumericValue,
   RESPONSIVE_GRID,
+  stripQueryAndHash,
 } from "./propertyPanelHelpers";
 import { Section, SegmentedControl, SelectField, SliderControl } from "./propertyPanelPrimitives";
 
@@ -77,7 +78,7 @@ export function MediaSection({
     projectDir && srcAttr && !srcAttr.startsWith("http") ? `${projectDir}/${srcAttr}` : srcAttr;
   const projectSrc =
     srcAttr && !/^(?:https?:|data:|blob:)/i.test(srcAttr)
-      ? srcAttr.replace(/^\.\//, "").replace(/[?#].*$/, "")
+      ? stripQueryAndHash(srcAttr.startsWith("./") ? srcAttr.slice(2) : srcAttr)
       : "";
   const canRemoveBackground = Boolean(onRemoveBackground && isVisualMedia && projectSrc);
   const panelTitle = isImage ? "Image" : isVideo ? "Video" : "Audio";
