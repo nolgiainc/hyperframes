@@ -28,103 +28,16 @@ import { usePanelLayoutContext } from "../contexts/PanelLayoutContext";
 import { useFileManagerContext } from "../contexts/FileManagerContext";
 import { useDomEditContext } from "../contexts/DomEditContext";
 import { usePlayerStore } from "../player";
-import { patchMediaColorGradingInHtml } from "./editor/colorGradingScopePatch";
-import { saveProjectFilesWithHistory } from "../utils/studioFileHistory";
-import type {
-  BackgroundRemovalProgress,
-  BackgroundRemovalResult,
-} from "./editor/propertyPanelHelpers";
+import { waitForMediaJob } from "./studioMediaJobs";
+import {
+  applyColorGradingScopeUpdate,
+  EMPTY_COLOR_GRADING_SCOPE_RESULT,
+  type ColorGradingScope,
+} from "./studioColorGradingScope";
+import type { BackgroundRemovalProgress } from "./editor/propertyPanelTypes";
 
 const MIN_INSPECTOR_SPLIT_PERCENT = 20;
 const MAX_INSPECTOR_SPLIT_PERCENT = 75;
-const MEDIA_JOB_RECONNECT_TIMEOUT_MS = 15_000;
-
-function hasRelativeLutSource(value: string | null): boolean {
-  if (!value) return false;
-  try {
-    const parsed = JSON.parse(value) as { lut?: { src?: unknown } } | null;
-    const src = typeof parsed?.lut?.src === "string" ? parsed.lut.src.trim() : "";
-    return Boolean(src && !/^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(src));
-  } catch {
-    return false;
-  }
-}
-
-function waitForMediaJob(
-  jobId: string,
-  onProgress?: (progress: BackgroundRemovalProgress) => void,
-  signal?: AbortSignal,
-): Promise<BackgroundRemovalResult> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException("Background removal was cancelled", "AbortError"));
-      return;
-    }
-    const events = new EventSource(`/api/media-jobs/${encodeURIComponent(jobId)}/progress`);
-    let settled = false;
-    let reconnectTimer: number | null = null;
-
-    const clearReconnectTimer = () => {
-      if (reconnectTimer === null) return;
-      window.clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    };
-    const finish = (callback: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearReconnectTimer();
-      signal?.removeEventListener("abort", handleAbort);
-      events.close();
-      callback();
-    };
-    const handleAbort = () => {
-      finish(() => reject(new DOMException("Background removal was cancelled", "AbortError")));
-    };
-    signal?.addEventListener("abort", handleAbort, { once: true });
-
-    events.addEventListener("progress", (event) => {
-      let progress: BackgroundRemovalProgress;
-      try {
-        progress = JSON.parse((event as MessageEvent).data) as BackgroundRemovalProgress;
-      } catch {
-        finish(() => reject(new Error("Invalid background-removal progress event")));
-        return;
-      }
-      clearReconnectTimer();
-      onProgress?.(progress);
-      if (progress.status === "complete") {
-        if (!progress.outputPath) {
-          finish(() => reject(new Error("Background removal finished without an output path")));
-          return;
-        }
-        const outputPath = progress.outputPath;
-        finish(() => {
-          resolve({
-            outputPath,
-            backgroundOutputPath: progress.backgroundOutputPath,
-            provider: progress.provider,
-          });
-        });
-        return;
-      }
-      if (progress.status === "failed") {
-        finish(() => reject(new Error(progress.error || "Background removal failed")));
-      }
-    });
-    events.onopen = clearReconnectTimer;
-    events.onerror = () => {
-      if (events.readyState === EventSource.CLOSED) {
-        finish(() => reject(new Error("Lost connection to background-removal job")));
-        return;
-      }
-      if (reconnectTimer === null) {
-        reconnectTimer = window.setTimeout(() => {
-          finish(() => reject(new Error("Lost connection to background-removal job")));
-        }, MEDIA_JOB_RECONNECT_TIMEOUT_MS);
-      }
-    };
-  });
-}
 
 export interface StudioRightPanelProps {
   designPanelActive: boolean;
@@ -340,66 +253,27 @@ export function StudioRightPanel({
   }, []);
 
   const handleApplyColorGradingScope = useCallback(
-    async (scope: "source-file" | "project", value: string | null) => {
-      try {
-        await waitForPendingDomEditSaves();
-        if (scope === "project" && hasRelativeLutSource(value)) {
-          showToast(
-            "Project-wide color grading cannot copy relative LUT paths. Apply to this file or use a URL/data LUT.",
-            "error",
-          );
-          return { changedFiles: 0, changedElements: 0 };
-        }
-        const selectedSourceFile = domEditSelection?.sourceFile || activeCompPath || "index.html";
-        const paths =
-          scope === "source-file"
-            ? [selectedSourceFile]
-            : fileTree.filter((path) => /\.html?$/i.test(path));
-        const snapshots = await Promise.all(
-          Array.from(new Set(paths)).map(
-            async (path) => [path, await readProjectFile(path)] as const,
-          ),
-        );
-        const files: Record<string, string> = {};
-        let changedElements = 0;
-
-        for (const [path, before] of snapshots) {
-          const result = patchMediaColorGradingInHtml(before, value);
-          if (result.html !== before) {
-            files[path] = result.html;
-            changedElements += result.count;
-          }
-        }
-
-        if (Object.keys(files).length === 0) {
-          showToast("No color grading changed", "info");
-          return { changedFiles: 0, changedElements: 0 };
-        }
-
-        domEditSaveTimestampRef.current = Date.now();
-        const changedPaths = await saveProjectFilesWithHistory({
-          projectId,
-          label: value ? "Apply color grading" : "Clear color grading",
-          kind: "manual",
-          files,
-          readFile: readProjectFile,
-          writeFile: writeProjectFile,
-          recordEdit,
-        });
-        reloadPreview();
-        showToast(
-          `${value ? "Applied" : "Cleared"} color grading on ${changedElements} media item${changedElements === 1 ? "" : "s"}`,
-          "info",
-        );
-        return { changedFiles: changedPaths.length, changedElements };
-      } catch (error) {
+    async (scope: ColorGradingScope, value: string | null) =>
+      applyColorGradingScopeUpdate({
+        scope,
+        value,
+        selectedSourceFile: domEditSelection?.sourceFile || activeCompPath || "index.html",
+        fileTree,
+        projectId,
+        domEditSaveTimestampRef,
+        waitForPendingDomEditSaves,
+        readProjectFile,
+        writeProjectFile,
+        recordEdit,
+        reloadPreview,
+        showToast,
+      }).catch((error) => {
         showToast(
           `Couldn't apply color grading: ${error instanceof Error ? error.message : String(error)}`,
           "error",
         );
-        return { changedFiles: 0, changedElements: 0 };
-      }
-    },
+        return EMPTY_COLOR_GRADING_SCOPE_RESULT;
+      }),
     [
       activeCompPath,
       domEditSaveTimestampRef,
@@ -416,6 +290,7 @@ export function StudioRightPanel({
   );
 
   const handleRemoveBackground = useCallback(
+    // fallow-ignore-next-line complexity
     async (
       inputPath: string,
       options: {

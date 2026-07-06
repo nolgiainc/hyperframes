@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   HF_COLOR_GRADING_PRESETS,
   normalizeHfColorGrading,
@@ -7,21 +7,12 @@ import {
   type HfColorGradingEffectKey,
   type NormalizedHfColorGrading,
 } from "@hyperframes/core/color-grading";
-import {
-  ChevronDown,
-  ChevronRight,
-  Minus,
-  Plus,
-  RotateCcw,
-  Settings,
-  X,
-} from "../../icons/SystemIcons";
+import { ChevronDown, ChevronRight, Plus, X } from "../../icons/SystemIcons";
 import { LUT_EXT } from "../../utils/mediaTypes";
 import { LABEL } from "./propertyPanelHelpers";
+import { ColorGradingSliderControl } from "./propertyPanelColorGradingSlider";
 
 const LUT_UPLOAD_DIR = "assets/luts";
-const SLIDER_THUMB_SIZE = 10;
-const SLIDER_THUMB_RADIUS = SLIDER_THUMB_SIZE / 2;
 
 const ADJUST_SLIDERS: Array<{
   key: HfColorGradingAdjustKey;
@@ -131,6 +122,13 @@ const DETAIL_SLIDERS: Array<{
   },
 ];
 
+type DetailSlider = (typeof DETAIL_SLIDERS)[number];
+type SliderSettings = {
+  active?: boolean;
+  label: string;
+  onClick: () => void;
+};
+
 const EFFECT_SLIDERS: Array<{
   key: HfColorGradingEffectKey;
   label: string;
@@ -156,275 +154,6 @@ const VIGNETTE_TUNE_SLIDERS = DETAIL_SLIDERS.filter(
 const GRAIN_TUNE_SLIDERS = DETAIL_SLIDERS.filter(
   (slider) => slider.key === "grainSize" || slider.key === "grainRoughness",
 );
-
-function clampNumber(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min;
-  return Math.min(max, Math.max(min, value));
-}
-
-function formatNumericInput(value: number, scale: number): string {
-  const scaled = value / scale;
-  return scale === 100 ? scaled.toFixed(2) : String(Math.round(scaled));
-}
-
-function parseNumericInput(value: string, scale: number): number | null {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return null;
-  return parsed * scale;
-}
-
-function tickPercent(value: number, min: number, max: number): number {
-  if (max <= min) return 0;
-  return ((value - min) / (max - min)) * 100;
-}
-
-function ColorGradingSliderControl({
-  label,
-  value,
-  min,
-  max,
-  step,
-  neutral = min,
-  scale = 1,
-  suffix = "",
-  displayValue,
-  disabled,
-  onCommit,
-  onReset,
-  settings,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  neutral?: number;
-  scale?: number;
-  suffix?: string;
-  displayValue: string;
-  disabled?: boolean;
-  onCommit: (nextValue: number) => void;
-  onReset?: () => void;
-  settings?: {
-    active?: boolean;
-    label: string;
-    onClick: () => void;
-  };
-}) {
-  const [draftState, setDraftState] = useState<{ value: number; source: number } | null>(null);
-  const [inputDraft, setInputDraft] = useState<{ value: string; source: number } | null>(null);
-  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const valueRef = useRef(value);
-  valueRef.current = value;
-
-  useEffect(
-    () => () => {
-      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-    },
-    [],
-  );
-
-  const clampDraft = useCallback(
-    (nextValue: number) => clampNumber(nextValue, min, max),
-    [max, min],
-  );
-
-  const setLocalDraft = useCallback(
-    (nextValue: number) => {
-      const clamped = clampDraft(nextValue);
-      const source = valueRef.current;
-      setDraftState({ value: clamped, source });
-      setInputDraft({ value: formatNumericInput(clamped, scale), source });
-      return clamped;
-    },
-    [clampDraft, scale],
-  );
-
-  const commitDraft = useCallback(
-    (nextValue: number) => {
-      const clamped = setLocalDraft(nextValue);
-      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-      if (clamped !== valueRef.current) onCommit(clamped);
-    },
-    [onCommit, setLocalDraft],
-  );
-
-  const scheduleCommit = useCallback(
-    (nextValue: number) => {
-      const clamped = setLocalDraft(nextValue);
-      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-      commitTimerRef.current = setTimeout(() => {
-        if (clamped !== valueRef.current) onCommit(clamped);
-      }, 40);
-    },
-    [onCommit, setLocalDraft],
-  );
-
-  const draft = draftState?.source === value ? draftState.value : value;
-  const inputValue =
-    inputDraft?.source === value ? inputDraft.value : formatNumericInput(draft, scale);
-
-  const commitInputDraft = useCallback(() => {
-    const parsed = parseNumericInput(inputValue, scale);
-    if (parsed === null) {
-      setInputDraft(null);
-      return;
-    }
-    commitDraft(parsed);
-  }, [commitDraft, inputValue, scale]);
-
-  const nudge = useCallback(
-    (direction: -1 | 1) => {
-      commitDraft(draft + step * direction);
-    },
-    [commitDraft, draft, step],
-  );
-
-  const range = max - min;
-  const valuePercent = range === 0 ? 0 : ((draft - min) / range) * 100;
-  const neutralPercent = range === 0 ? 0 : ((neutral - min) / range) * 100;
-  const fillLeft = Math.min(valuePercent, neutralPercent);
-  const fillWidth = Math.abs(valuePercent - neutralPercent);
-  const ticks = Array.from(new Set([min, neutral, max])).sort((a, b) => a - b);
-
-  return (
-    <div className="grid min-w-0 gap-0.5 rounded-md bg-panel-input/30 px-1.5 py-1">
-      <div className="flex min-w-0 items-center gap-1">
-        <span className={`${LABEL} min-w-0 flex-1 truncate`}>{label}</span>
-        {settings && (
-          <button
-            type="button"
-            disabled={disabled}
-            aria-label={settings.label}
-            onClick={(event) => {
-              event.stopPropagation();
-              settings.onClick();
-            }}
-            className={`relative flex h-5 w-5 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-panel-hover hover:text-panel-text-1 disabled:cursor-not-allowed disabled:opacity-40 ${
-              settings.active ? "text-studio-accent" : "text-panel-text-5"
-            }`}
-            title={settings.label}
-          >
-            <Settings size={11} />
-            {settings.active && (
-              <span className="absolute right-0.5 top-0.5 h-1 w-1 rounded-full bg-studio-accent" />
-            )}
-          </button>
-        )}
-        {onReset && (
-          <button
-            type="button"
-            disabled={disabled}
-            aria-label={`Reset ${label}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onReset();
-            }}
-            className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-panel-text-5 transition-colors hover:bg-panel-hover hover:text-panel-text-1 disabled:cursor-not-allowed disabled:opacity-40"
-            title={`Reset ${label}`}
-          >
-            <RotateCcw size={11} />
-          </button>
-        )}
-      </div>
-
-      <div className="relative h-5 min-w-0">
-        <div
-          data-color-grading-slider-track="true"
-          className="pointer-events-none absolute inset-y-0 z-0"
-          style={{ left: SLIDER_THUMB_RADIUS, right: SLIDER_THUMB_RADIUS }}
-        >
-          {ticks.map((tick) => (
-            <div
-              key={tick}
-              data-color-grading-slider-tick="true"
-              className="absolute top-1/2 h-3 w-px -translate-y-1/2 bg-panel-text-3"
-              style={{ left: `${tickPercent(tick, min, max)}%` }}
-              title={String(tick / scale)}
-            />
-          ))}
-          <div className="absolute left-0 right-0 top-1/2 z-10 h-0.5 -translate-y-1/2 rounded-full bg-panel-border" />
-          <div
-            className="absolute top-1/2 z-20 h-0.5 -translate-y-1/2 rounded-full bg-studio-accent"
-            style={{ left: `${fillLeft}%`, width: `${fillWidth}%` }}
-          />
-        </div>
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={draft}
-          disabled={disabled}
-          aria-label={label}
-          onChange={(event) => scheduleCommit(Number(event.currentTarget.value))}
-          onMouseUp={() => commitDraft(draft)}
-          onTouchEnd={() => commitDraft(draft)}
-          onBlur={() => commitDraft(draft)}
-          className="hf-color-grading-range absolute left-0 right-0 top-1/2 z-30 min-w-0 w-full -translate-y-1/2"
-          title={displayValue}
-        />
-      </div>
-
-      <div className="flex min-w-0 items-center justify-end gap-1">
-        <div className="flex flex-shrink-0 items-center rounded-md bg-panel-input px-1.5 py-px">
-          <input
-            type="number"
-            value={inputValue}
-            min={min / scale}
-            max={max / scale}
-            step={step / scale}
-            disabled={disabled}
-            onChange={(event) =>
-              setInputDraft({ value: event.currentTarget.value, source: valueRef.current })
-            }
-            onBlur={commitInputDraft}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.currentTarget.blur();
-                return;
-              }
-              if (event.key === "ArrowUp") {
-                event.preventDefault();
-                nudge(1);
-                return;
-              }
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                nudge(-1);
-              }
-            }}
-            className="hf-color-grading-number h-4 w-[36px] bg-transparent text-right text-[10px] font-medium tabular-nums text-panel-text-1 outline-none disabled:cursor-not-allowed"
-            title={displayValue}
-          />
-          {suffix && <span className="ml-0.5 text-[10px] text-panel-text-5">{suffix}</span>}
-        </div>
-        <div className="flex flex-shrink-0 overflow-hidden rounded-md bg-panel-input">
-          <button
-            type="button"
-            disabled={disabled}
-            aria-label={`Decrease ${label}`}
-            onClick={() => nudge(-1)}
-            className="flex h-5 w-5 items-center justify-center text-panel-text-4 transition-colors hover:bg-panel-hover hover:text-panel-text-1 disabled:cursor-not-allowed disabled:opacity-40"
-            title={`Decrease ${label}`}
-          >
-            <Minus size={11} />
-          </button>
-          <button
-            type="button"
-            disabled={disabled}
-            aria-label={`Increase ${label}`}
-            onClick={() => nudge(1)}
-            className="flex h-5 w-5 items-center justify-center border-l border-panel-border text-panel-text-4 transition-colors hover:bg-panel-hover hover:text-panel-text-1 disabled:cursor-not-allowed disabled:opacity-40"
-            title={`Increase ${label}`}
-          >
-            <Plus size={11} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function normalizedDefaultValue(slider: { defaultValue?: number; scale: number }): number {
   return (slider.defaultValue ?? 0) / slider.scale;
@@ -490,6 +219,45 @@ export function ColorGradingControls({
     const uploaded = await onImportAssets(files, LUT_UPLOAD_DIR);
     const firstLut = uploaded.find((asset) => LUT_EXT.test(asset));
     if (firstLut) applyLut(firstLut, 1);
+  };
+  const commitDetailSlider = (slider: DetailSlider, next: number) => {
+    onCommitColorGrading({
+      ...grading,
+      intensity: visibleIntensity(grading),
+      details: {
+        ...grading.details,
+        [slider.key]: next / slider.scale,
+      },
+    });
+  };
+  const resetDetailSlider = (slider: DetailSlider) => {
+    onCommitColorGrading({
+      ...grading,
+      intensity: visibleIntensity(grading),
+      details: {
+        ...grading.details,
+        [slider.key]: normalizedDefaultValue(slider),
+      },
+    });
+  };
+  const renderDetailSlider = (slider: DetailSlider, settings?: SliderSettings) => {
+    const value = Math.round(grading.details[slider.key] * slider.scale);
+    return (
+      <ColorGradingSliderControl
+        key={slider.key}
+        label={slider.label}
+        value={value}
+        min={slider.min}
+        max={slider.max}
+        step={slider.step}
+        neutral={slider.defaultValue ?? 0}
+        suffix={slider.suffix}
+        displayValue={`${value}%`}
+        settings={settings}
+        onCommit={(next) => commitDetailSlider(slider, next)}
+        onReset={() => resetDetailSlider(slider)}
+      />
+    );
   };
 
   return (
@@ -669,51 +437,16 @@ export function ColorGradingControls({
       <div className="grid min-w-0 gap-1.5">
         <span className={LABEL}>Finishing</span>
         <div className="grid min-w-0 grid-cols-2 gap-1.5">
-          {AMOUNT_DETAIL_SLIDERS.map((slider) => {
-            const value = grading.details[slider.key] * slider.scale;
-            const defaultValue = slider.defaultValue ?? 0;
-            return (
-              <ColorGradingSliderControl
-                key={slider.key}
-                label={slider.label}
-                value={Math.round(value)}
-                min={slider.min}
-                max={slider.max}
-                step={slider.step}
-                neutral={defaultValue}
-                suffix={slider.suffix}
-                displayValue={`${Math.round(value)}%`}
-                settings={{
-                  active: slider.key === "vignette" ? vignetteSettingsActive : grainSettingsActive,
-                  label: `${slider.label} settings`,
-                  onClick: () =>
-                    setDetailSettings((current) =>
-                      current === slider.key ? null : (slider.key as "vignette" | "grain"),
-                    ),
-                }}
-                onCommit={(next) => {
-                  onCommitColorGrading({
-                    ...grading,
-                    intensity: visibleIntensity(grading),
-                    details: {
-                      ...grading.details,
-                      [slider.key]: next / slider.scale,
-                    },
-                  });
-                }}
-                onReset={() => {
-                  onCommitColorGrading({
-                    ...grading,
-                    intensity: visibleIntensity(grading),
-                    details: {
-                      ...grading.details,
-                      [slider.key]: defaultValue / slider.scale,
-                    },
-                  });
-                }}
-              />
-            );
-          })}
+          {AMOUNT_DETAIL_SLIDERS.map((slider) =>
+            renderDetailSlider(slider, {
+              active: slider.key === "vignette" ? vignetteSettingsActive : grainSettingsActive,
+              label: `${slider.label} settings`,
+              onClick: () =>
+                setDetailSettings((current) =>
+                  current === slider.key ? null : (slider.key as "vignette" | "grain"),
+                ),
+            }),
+          )}
         </div>
         {detailSettings && (
           <div className="grid min-w-0 gap-1.5 rounded-md border border-panel-border bg-panel-input/40 p-1.5 shadow-xl shadow-black/20">
@@ -732,43 +465,7 @@ export function ColorGradingControls({
               </button>
             </div>
             <div className="grid min-w-0 grid-cols-2 gap-1.5">
-              {detailSettingsSliders.map((slider) => {
-                const value = grading.details[slider.key] * slider.scale;
-                const defaultValue = slider.defaultValue ?? 0;
-                return (
-                  <ColorGradingSliderControl
-                    key={slider.key}
-                    label={slider.label}
-                    value={Math.round(value)}
-                    min={slider.min}
-                    max={slider.max}
-                    step={slider.step}
-                    neutral={defaultValue}
-                    suffix={slider.suffix}
-                    displayValue={`${Math.round(value)}%`}
-                    onCommit={(next) => {
-                      onCommitColorGrading({
-                        ...grading,
-                        intensity: visibleIntensity(grading),
-                        details: {
-                          ...grading.details,
-                          [slider.key]: next / slider.scale,
-                        },
-                      });
-                    }}
-                    onReset={() => {
-                      onCommitColorGrading({
-                        ...grading,
-                        intensity: visibleIntensity(grading),
-                        details: {
-                          ...grading.details,
-                          [slider.key]: defaultValue / slider.scale,
-                        },
-                      });
-                    }}
-                  />
-                );
-              })}
+              {detailSettingsSliders.map((slider) => renderDetailSlider(slider))}
             </div>
           </div>
         )}

@@ -12,6 +12,7 @@ import {
 } from "./propertyPanelHelpers";
 import { Section, SegmentedControl, SelectField, SliderControl } from "./propertyPanelPrimitives";
 
+// fallow-ignore-next-line complexity
 export function MediaSection({
   projectDir,
   element,

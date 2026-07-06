@@ -64,7 +64,6 @@ export function StudioApp() {
   const initialUrlStateRef = useRef(readStudioUrlStateFromWindow());
   const viewModeValue = useViewModeState();
 
-  // sessionStorage-backed: fires once per tab, survives HMR remounts
   useEffect(() => {
     if (resolving || waitingForServer) return;
     if (hasFiredSessionStart()) return;
@@ -506,8 +505,6 @@ export function StudioApp() {
                       onSelectComposition={handleSelectComposition}
                     />
                   )}
-                  {/* Timeline stage stays mounted (just hidden) in storyboard mode,
-                      so preview/player/gesture/render state survives the toggle. */}
                   <div
                     className={`flex flex-1 min-h-0${
                       viewModeValue.viewMode === "storyboard" ? " hidden" : ""

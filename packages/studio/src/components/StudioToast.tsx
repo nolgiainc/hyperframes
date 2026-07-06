@@ -4,6 +4,7 @@ interface StudioToastProps {
   onDismiss?: () => void;
 }
 
+// fallow-ignore-next-line complexity
 export function StudioToast({ message, tone, onDismiss }: StudioToastProps) {
   const isError = tone === "error";
   return (

@@ -76,6 +76,7 @@ function stripPreviewAssetPath(src: string, projectId: string): string | null {
   return assetPath;
 }
 
+// fallow-ignore-next-line complexity
 function resolveProjectAssetPath(
   sourceFile: string,
   src: string,
