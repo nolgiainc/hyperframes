@@ -59,6 +59,7 @@ export interface StudioPreviewAreaProps {
     updates: Pick<TimelineElement, "start" | "duration" | "playbackStart">,
   ) => Promise<void> | void;
   handleToggleTrackHidden: (track: number, hidden: boolean) => Promise<void> | void;
+  handleToggleElementHidden: (elementKey: string, hidden: boolean) => Promise<void> | void;
   handleBlockedTimelineEdit: (element: TimelineElement, intent: BlockedTimelineEditIntent) => void;
   handleTimelineElementSplit: (element: TimelineElement, splitTime: number) => Promise<void> | void;
   handleRazorSplit: (element: TimelineElement, splitTime: number) => Promise<void> | void;
@@ -85,6 +86,7 @@ export function StudioPreviewArea({
   handleTimelineElementMove,
   handleTimelineElementResize,
   handleToggleTrackHidden,
+  handleToggleElementHidden,
   handleBlockedTimelineEdit,
   handleTimelineElementSplit,
   handleRazorSplit,
@@ -182,6 +184,7 @@ export function StudioPreviewArea({
       onMoveElement: handleTimelineElementMove,
       onResizeElement: handleTimelineElementResize,
       onToggleTrackHidden: handleToggleTrackHidden,
+      onToggleElementHidden: handleToggleElementHidden,
       onBlockedEditAttempt: handleBlockedTimelineEdit,
       onSplitElement: handleTimelineElementSplit,
       onRazorSplit: handleRazorSplit,
@@ -282,6 +285,7 @@ export function StudioPreviewArea({
       handleTimelineElementMove,
       handleTimelineElementResize,
       handleToggleTrackHidden,
+      handleToggleElementHidden,
       handleBlockedTimelineEdit,
       handleTimelineElementSplit,
       handleRazorSplit,

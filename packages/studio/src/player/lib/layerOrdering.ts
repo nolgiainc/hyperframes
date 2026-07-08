@@ -27,6 +27,20 @@ export function getElementZIndex(element: HTMLElement): number {
   }
 }
 
+// fallow-ignore-next-line complexity
+export function hasExplicitZIndex(element: HTMLElement): boolean {
+  try {
+    const inline = element.style?.zIndex;
+    if (inline) return inline !== "auto";
+    const win = element.ownerDocument?.defaultView;
+    if (!win) return false;
+    const value = win.getComputedStyle(element).zIndex;
+    return value !== "auto" && value !== "";
+  } catch {
+    return false;
+  }
+}
+
 export function computeReorderZValues(
   existingValues: readonly number[],
   fromIndex: number,

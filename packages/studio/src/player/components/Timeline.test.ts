@@ -18,11 +18,9 @@ import {
   shouldHandleTimelineDeleteKey,
   shouldAutoScrollTimeline,
 } from "./Timeline";
-import { buildStackingTimelineTracks, insertPreviewTrackOrder } from "./timelineTrackOrder";
 import { RULER_H, TRACK_H } from "./timelineLayout";
 import { formatTime } from "../lib/time";
 import { usePlayerStore } from "../store/playerStore";
-import type { TimelineElement } from "../store/playerStore";
 import { TimelineEditProvider } from "../../contexts/TimelineEditContext";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -200,99 +198,6 @@ describe("Timeline provider boundary", () => {
 
     expect(onSeek).not.toHaveBeenCalled();
     act(() => root.unmount());
-  });
-});
-
-function rowElement(input: {
-  id: string;
-  track: number;
-  zIndex?: number;
-  start?: number;
-  duration?: number;
-  stackingContextId?: string | null;
-  parentCompositionId?: string | null;
-  compositionAncestors?: string[];
-}): TimelineElement {
-  return {
-    id: input.id,
-    tag: "div",
-    start: input.start ?? 0,
-    duration: input.duration ?? 1,
-    track: input.track,
-    zIndex: input.zIndex ?? 0,
-    stackingContextId: input.stackingContextId ?? "root",
-    parentCompositionId: input.parentCompositionId ?? null,
-    compositionAncestors: input.compositionAncestors ?? ["root"],
-  };
-}
-
-describe("buildStackingTimelineTracks", () => {
-  it("keeps no-track-index clips in DOM order when stacking ties", () => {
-    const tracks = buildStackingTimelineTracks([
-      rowElement({ id: "a", track: 0 }),
-      rowElement({ id: "b", track: 1 }),
-      rowElement({ id: "c", track: 2 }),
-    ]);
-
-    expect(tracks.map(([track]) => track)).toEqual([0, 1, 2]);
-  });
-
-  it("orders authored track-index rows by stacking order instead of numeric track order", () => {
-    const tracks = buildStackingTimelineTracks([
-      rowElement({ id: "dom-first", track: 2 }),
-      rowElement({ id: "dom-second", track: 0 }),
-    ]);
-
-    expect(tracks.map(([track]) => track)).toEqual([2, 0]);
-  });
-
-  it("renders explicit z-index rows top-to-front by descending z-index", () => {
-    const tracks = buildStackingTimelineTracks([
-      rowElement({ id: "back", track: 0, zIndex: 1 }),
-      rowElement({ id: "front", track: 1, zIndex: 10 }),
-      rowElement({ id: "middle", track: 2, zIndex: 5 }),
-    ]);
-
-    expect(tracks.map(([track]) => track)).toEqual([1, 2, 0]);
-  });
-
-  it("keeps nested sub-composition clips scoped below parent-level clips", () => {
-    const tracks = buildStackingTimelineTracks([
-      rowElement({ id: "root-low", track: 1, zIndex: 1 }),
-      rowElement({
-        id: "nested-high",
-        track: 0,
-        zIndex: 100,
-        stackingContextId: "scene",
-        parentCompositionId: "scene",
-        compositionAncestors: ["root", "scene"],
-      }),
-      rowElement({ id: "root-front", track: 2, zIndex: 2 }),
-    ]);
-
-    expect(tracks.map(([track]) => track)).toEqual([2, 1, 0]);
-  });
-
-  it("keeps time-overlapping equal-rank clips on separate literal-track rows", () => {
-    const tracks = buildStackingTimelineTracks([
-      rowElement({ id: "first", track: 0, start: 0, duration: 2 }),
-      rowElement({ id: "second", track: 1, start: 1, duration: 2 }),
-    ]);
-
-    expect(tracks).toHaveLength(2);
-    expect(
-      tracks.map(([track, elements]) => [track, elements.map((element) => element.id)]),
-    ).toEqual([
-      [0, ["first"]],
-      [1, ["second"]],
-    ]);
-  });
-});
-
-describe("insertPreviewTrackOrder", () => {
-  it("preserves top and bottom drag-preview row insertion without numeric resorting", () => {
-    expect(insertPreviewTrackOrder([5, 2, 0], -1)).toEqual([-1, 5, 2, 0]);
-    expect(insertPreviewTrackOrder([5, 2, 0], 6)).toEqual([5, 2, 0, 6]);
   });
 });
 

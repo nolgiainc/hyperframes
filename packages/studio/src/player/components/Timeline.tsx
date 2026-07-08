@@ -23,7 +23,7 @@ import {
 import { useTimelineClipDrag } from "./useTimelineClipDrag";
 import { ClipContextMenu } from "./ClipContextMenu";
 import { TimelineShortcutHint } from "./TimelineShortcutHint";
-import { buildStackingTimelineTracks, insertPreviewTrackOrder } from "./timelineTrackOrder";
+import { buildStackingTimelineLayers, insertPreviewTrackOrder } from "./timelineTrackOrder";
 import {
   GUTTER,
   generateTicks,
@@ -187,19 +187,24 @@ export const Timeline = memo(function Timeline({
     return Number.isFinite(result) ? result : safeDur;
   }, [rawElements, duration]);
 
-  const tracks = useMemo(() => buildStackingTimelineTracks(expandedElements), [expandedElements]);
+  const tracks = useMemo(
+    () => buildStackingTimelineLayers(expandedElements).rows,
+    [expandedElements],
+  );
 
   const trackStyles = useMemo(() => {
-    const map = new Map<number, TrackVisualStyle>();
-    for (const [trackNum, els] of tracks) {
-      map.set(trackNum, getTrackStyle(els[0]?.tag ?? ""));
+    const map = new Map<string, TrackVisualStyle>();
+    for (const layer of tracks) {
+      map.set(layer.id, getTrackStyle(layer.elements[0]?.tag ?? ""));
     }
     return map;
   }, [tracks]);
 
-  const trackOrder = useMemo(() => tracks.map(([trackNum]) => trackNum), [tracks]);
+  const trackOrder = useMemo(() => tracks.map((layer) => layer.id), [tracks]);
   const trackOrderRef = useRef(trackOrder);
   trackOrderRef.current = trackOrder;
+  const timelineLayersRef = useRef(tracks);
+  timelineLayersRef.current = tracks;
   const expandedElementsRef = useRef(expandedElements);
   expandedElementsRef.current = expandedElements;
 
@@ -223,6 +228,7 @@ export const Timeline = memo(function Timeline({
     ppsRef,
     durationRef,
     trackOrderRef,
+    timelineLayersRef,
     timelineElementsRef: expandedElementsRef,
     onMoveElement,
     onResizeElement,
@@ -235,10 +241,14 @@ export const Timeline = memo(function Timeline({
     if (
       !draggedClip?.started ||
       trackOrder.length === 0 ||
-      trackOrder.includes(draggedClip.previewTrack)
+      trackOrder.includes(draggedClip.previewLayerId)
     )
       return trackOrder;
-    return insertPreviewTrackOrder(trackOrder, draggedClip.previewTrack);
+    return insertPreviewTrackOrder(
+      trackOrder,
+      draggedClip.previewLayerId,
+      draggedClip.previewLayerIndex,
+    );
   }, [draggedClip, trackOrder]);
 
   const totalH = getTimelineCanvasHeight(displayTrackOrder.length);
@@ -369,6 +379,7 @@ export const Timeline = memo(function Timeline({
     ppsRef,
     durationRef,
     trackOrderRef,
+    timelineLayersRef,
     onFileDrop,
     onAssetDrop,
     onBlockDrop,

@@ -4,12 +4,36 @@ import {
   createTimelineElementFromManifestClip,
   parseTimelineFromDOM,
   createImplicitTimelineLayersFromDOM,
+  buildStandaloneRootTimelineElement,
 } from "./timelineDOM";
 
 function makeDoc(html: string): Document {
   const d = document.implementation.createHTMLDocument();
   d.body.innerHTML = html;
   return d;
+}
+
+function makeLiveDoc(html: string): Document {
+  document.head.innerHTML = "";
+  document.body.innerHTML = html;
+  return document;
+}
+
+function mockComputedZIndex(doc: Document, zIndexById: ReadonlyMap<string, string>): void {
+  const win = doc.defaultView;
+  if (!win) throw new Error("Expected document window");
+  const original = win.getComputedStyle.bind(win);
+  Object.defineProperty(win, "getComputedStyle", {
+    configurable: true,
+    value: (element: Element, pseudoElt?: string | null) => {
+      const style = original(element, pseudoElt);
+      const zIndex = zIndexById.get(element.id);
+      if (zIndex != null) {
+        Object.defineProperty(style, "zIndex", { configurable: true, value: zIndex });
+      }
+      return style;
+    },
+  });
 }
 
 describe("parseTimelineFromDOM — hfId from data-hf-id", () => {
@@ -135,6 +159,24 @@ describe("parseTimelineFromDOM — hfId from data-hf-id", () => {
     });
 
     expect(element.zIndex).toBe(30);
+    expect(element.hasExplicitZIndex).toBe(true);
+  });
+
+  it("marks parsed inline, CSS-rule, and auto z-index authorship accurately", () => {
+    const doc = makeLiveDoc(`
+      <div data-composition-id="root">
+        <div id="inline" class="clip" data-start="0" data-duration="2" style="z-index: 3"></div>
+        <div id="rule" class="clip" data-start="0" data-duration="2"></div>
+        <div id="auto" class="clip" data-start="0" data-duration="2"></div>
+      </div>
+    `);
+    mockComputedZIndex(doc, new Map([["rule", "12"]]));
+
+    const elements = parseTimelineFromDOM(doc, 10);
+
+    expect(elements.find((el) => el.id === "inline")?.hasExplicitZIndex).toBe(true);
+    expect(elements.find((el) => el.id === "rule")?.hasExplicitZIndex).toBe(true);
+    expect(elements.find((el) => el.id === "auto")?.hasExplicitZIndex).toBe(false);
   });
 });
 
@@ -168,5 +210,32 @@ describe("createImplicitTimelineLayersFromDOM — hfId from data-hf-id", () => {
     const layers = createImplicitTimelineLayersFromDOM(doc, 5);
 
     expect(layers).toEqual([]);
+  });
+
+  it("marks implicit layer CSS z-index authorship from computed style", () => {
+    const doc = makeLiveDoc(`
+      <div data-composition-id="root">
+        <div id="layer" class="clip"></div>
+      </div>
+    `);
+    mockComputedZIndex(doc, new Map([["layer", "8"]]));
+
+    const layers = createImplicitTimelineLayersFromDOM(doc, 10);
+
+    expect(layers[0]?.zIndex).toBe(8);
+    expect(layers[0]?.hasExplicitZIndex).toBe(true);
+  });
+});
+
+describe("buildStandaloneRootTimelineElement", () => {
+  it("marks the standalone root as auto z-index", () => {
+    const root = buildStandaloneRootTimelineElement({
+      compositionId: "root",
+      tagName: "div",
+      rootDuration: 10,
+      iframeSrc: "/preview/comp/index.html",
+    });
+
+    expect(root?.hasExplicitZIndex).toBe(false);
   });
 });

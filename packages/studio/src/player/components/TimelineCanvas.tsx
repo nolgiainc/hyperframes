@@ -20,6 +20,7 @@ import {
 } from "../store/playerStore";
 import type { DraggedClipState, ResizingClipState, BlockedClipState } from "./useTimelineClipDrag";
 import type { TrackVisualStyle } from "./timelineIcons";
+import type { StackingTimelineLayer, TimelineLayerId } from "./timelineTrackOrder";
 import { STUDIO_KEYFRAMES_ENABLED } from "../../components/editor/manualEditingAvailability";
 import { SPLIT_BOUNDARY_EPSILON_S } from "../../utils/timelineElementSplit";
 import { useTimelineEditContextOptional } from "../../contexts/TimelineEditContext";
@@ -47,10 +48,10 @@ interface TimelineCanvasProps {
   majorTickInterval: number;
   rangeSelection: TimelineRangeSelection | null;
   theme: TimelineTheme;
-  displayTrackOrder: number[];
-  trackOrder: number[];
-  tracks: [number, TimelineElement[]][];
-  trackStyles: Map<number, TrackVisualStyle>;
+  displayTrackOrder: TimelineLayerId[];
+  trackOrder: TimelineLayerId[];
+  tracks: StackingTimelineLayer[];
+  trackStyles: Map<TimelineLayerId, TrackVisualStyle>;
   selectedElementId: string | null;
   hoveredClip: string | null;
   draggedClip: DraggedClipState | null;
@@ -141,8 +142,14 @@ export const TimelineCanvas = memo(function TimelineCanvas({
   onContextMenuClip,
   beatAnalysis,
 }: TimelineCanvasProps) {
-  const { onResizeElement, onMoveElement, onToggleTrackHidden, onRazorSplit, onRazorSplitAll } =
-    useTimelineEditContextOptional();
+  const {
+    onResizeElement,
+    onMoveElement,
+    onToggleTrackHidden,
+    onToggleElementHidden,
+    onRazorSplit,
+    onRazorSplitAll,
+  } = useTimelineEditContextOptional();
   const beatDragging = usePlayerStore((s) => s.beatDragging);
   const draggedElement = draggedClip?.element ?? null;
   const activeDraggedElement =
@@ -198,13 +205,14 @@ export const TimelineCanvas = memo(function TimelineCanvas({
 
       {
         // fallow-ignore-next-line complexity
-        displayTrackOrder.map((trackNum) => {
-          const els = tracks.find(([t]) => t === trackNum)?.[1] ?? [];
-          const ts = trackStyles.get(trackNum) ?? getTrackStyle("");
+        displayTrackOrder.map((layerId, rowIndex) => {
+          const layer = tracks.find((item) => item.id === layerId) ?? null;
+          const els = layer?.elements ?? [];
+          const ts = trackStyles.get(layerId) ?? getTrackStyle("");
           const isPendingTrack =
-            draggedClip?.started === true && !trackOrder.includes(trackNum) && els.length === 0;
-          const rowBackground =
-            displayTrackOrder.indexOf(trackNum) % 2 === 0 ? theme.rowBackground : "#0D0E12";
+            draggedClip?.started === true && !trackOrder.includes(layerId) && els.length === 0;
+          const rowBackground = rowIndex % 2 === 0 ? theme.rowBackground : "#0D0E12";
+          const rowTrack = layer?.placementTrack ?? els[0]?.track ?? 0;
           // The beat-dot strip occupies the top of this track's lane (active track,
           // or the music track when nothing is selected). When shown, keyframe
           // diamonds shrink + drop to the bottom half so they don't collide with it.
@@ -216,7 +224,7 @@ export const TimelineCanvas = memo(function TimelineCanvas({
           const isTrackHidden = els.length > 0 && els.every((element) => element.hidden === true);
           return (
             <div
-              key={trackNum}
+              key={layerId}
               className="relative flex"
               style={{
                 height: TRACK_H,
@@ -234,8 +242,8 @@ export const TimelineCanvas = memo(function TimelineCanvas({
               >
                 <button
                   type="button"
-                  aria-label={isTrackHidden ? `Show track ${trackNum}` : `Hide track ${trackNum}`}
-                  title={isTrackHidden ? `Show track ${trackNum}` : `Hide track ${trackNum}`}
+                  aria-label={isTrackHidden ? `Show track ${rowTrack}` : `Hide track ${rowTrack}`}
+                  title={isTrackHidden ? `Show track ${rowTrack}` : `Hide track ${rowTrack}`}
                   className={`flex h-6 w-6 items-center justify-center rounded border-0 bg-transparent p-0 transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-[-1px] focus-visible:outline-[#3CE6AC] ${
                     isTrackHidden
                       ? "text-[#3CE6AC] hover:text-white"
@@ -246,7 +254,13 @@ export const TimelineCanvas = memo(function TimelineCanvas({
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void onToggleTrackHidden?.(trackNum, !isTrackHidden);
+                    if (onToggleElementHidden && els.length > 0) {
+                      for (const element of els) {
+                        void onToggleElementHidden(element.key ?? element.id, !isTrackHidden);
+                      }
+                      return;
+                    }
+                    void onToggleTrackHidden?.(rowTrack, !isTrackHidden);
                   }}
                 >
                   {isTrackHidden ? (
@@ -401,6 +415,8 @@ export const TimelineCanvas = memo(function TimelineCanvas({
                               pointerOffsetY: e.clientY - rect.top,
                               previewStart: el.start,
                               previewTrack: el.track,
+                              previewLayerId: layerId,
+                              previewLayerIndex: rowIndex,
                               previewStackingReorder: null,
                               snapBeatTime: null,
                               started: false,

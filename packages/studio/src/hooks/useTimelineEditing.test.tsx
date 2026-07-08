@@ -208,22 +208,28 @@ async function flushAsyncWork(): Promise<void> {
 describe("useTimelineEditing timeline z-index reorder", () => {
   it("routes a vertical drag through the shared z-index commit without writing track-index", async () => {
     const iframe = createPreviewIframe([
-      { id: "front", track: 0 },
-      { id: "middle", track: 1 },
-      { id: "back", track: 2 },
+      { id: "front", track: 0, style: "position: relative; z-index: 10" },
+      { id: "back", track: 2, style: "position: relative; z-index: 1" },
     ]);
-    const front = timelineElement({ id: "front", track: 0, zIndex: 0 });
-    const middle = timelineElement({ id: "middle", track: 1, zIndex: 0 });
-    const back = timelineElement({ id: "back", track: 2, zIndex: 0 });
+    const front = timelineElement({ id: "front", track: 0, zIndex: 10 });
+    const back = timelineElement({ id: "back", track: 2, zIndex: 1 });
     const commit = vi.fn<(entries: ZIndexEntry[]) => void>();
     const { move, unmount } = renderTimelineEditingHook({
-      timelineElements: [front, middle, back],
+      timelineElements: [front, back],
       iframe,
       onZIndexCommit: commit,
     });
 
     await act(async () => {
-      await move(back, { start: back.start, track: front.track });
+      await move(back, {
+        start: back.start,
+        track: back.track,
+        stackingReorder: {
+          contextKey: "root",
+          placement: { type: "onto", layerId: "layer-front" },
+          zIndexChanges: [{ key: "back", zIndex: 10 }],
+        },
+      });
     });
 
     const doc = iframe.contentDocument;
@@ -231,9 +237,7 @@ describe("useTimelineEditing timeline z-index reorder", () => {
 
     expect(commit).toHaveBeenCalledTimes(1);
     expect(commit.mock.calls[0]![0].map((entry) => [entry.id, entry.zIndex])).toEqual([
-      ["back", 3],
-      ["front", 2],
-      ["middle", 1],
+      ["back", 10],
     ]);
     expect(doc.getElementById("back")?.getAttribute("data-track-index")).toBe("2");
 
@@ -255,7 +259,15 @@ describe("useTimelineEditing timeline z-index reorder", () => {
     });
 
     await act(async () => {
-      await move(music, { start: music.start, track: front.track });
+      await move(music, {
+        start: music.start,
+        track: music.track,
+        stackingReorder: {
+          contextKey: "root",
+          placement: { type: "onto", layerId: "layer-front" },
+          zIndexChanges: [{ key: "music", zIndex: 2 }],
+        },
+      });
     });
 
     expect(commit).not.toHaveBeenCalled();
@@ -263,30 +275,40 @@ describe("useTimelineEditing timeline z-index reorder", () => {
     unmount();
   });
 
-  it("remaps distinct z-index values onto the reordered sibling group", async () => {
+  it("commits only the minimum z-index changes resolved by the timeline drag", async () => {
     const iframe = createPreviewIframe([
-      { id: "front", track: 0, style: "position: relative; z-index: 10" },
-      { id: "middle", track: 1, style: "position: relative; z-index: 5" },
-      { id: "back", track: 2, style: "position: relative; z-index: 1" },
+      { id: "front", track: 0, style: "position: relative; z-index: 2" },
+      { id: "back", track: 1, style: "position: relative; z-index: 1" },
+      { id: "dragged", track: 2, style: "position: relative; z-index: 0" },
     ]);
-    const front = timelineElement({ id: "front", track: 0, zIndex: 10 });
-    const middle = timelineElement({ id: "middle", track: 1, zIndex: 5 });
-    const back = timelineElement({ id: "back", track: 2, zIndex: 1 });
+    const front = timelineElement({ id: "front", track: 0, zIndex: 2 });
+    const back = timelineElement({ id: "back", track: 1, zIndex: 1 });
+    const dragged = timelineElement({ id: "dragged", track: 2, zIndex: 0 });
     const commit = vi.fn<(entries: ZIndexEntry[]) => void>();
     const { move, unmount } = renderTimelineEditingHook({
-      timelineElements: [front, middle, back],
+      timelineElements: [front, back, dragged],
       iframe,
       onZIndexCommit: commit,
     });
 
     await act(async () => {
-      await move(back, { start: back.start, track: front.track });
+      await move(dragged, {
+        start: dragged.start,
+        track: dragged.track,
+        stackingReorder: {
+          contextKey: "root",
+          placement: { type: "between", beforeLayerId: "front", afterLayerId: "back" },
+          zIndexChanges: [
+            { key: "dragged", zIndex: 2 },
+            { key: "front", zIndex: 3 },
+          ],
+        },
+      });
     });
 
     expect(commit.mock.calls[0]![0].map((entry) => [entry.id, entry.zIndex])).toEqual([
-      ["back", 10],
-      ["front", 5],
-      ["middle", 1],
+      ["dragged", 2],
+      ["front", 3],
     ]);
 
     unmount();
@@ -307,7 +329,15 @@ describe("useTimelineEditing timeline z-index reorder", () => {
     });
 
     await act(async () => {
-      await move(back, { start: back.start, track: front.track });
+      await move(back, {
+        start: back.start,
+        track: back.track,
+        stackingReorder: {
+          contextKey: "root",
+          placement: { type: "above", layerId: "front" },
+          zIndexChanges: [{ key: "back", zIndex: 2 }],
+        },
+      });
       await flushAsyncWork();
     });
 

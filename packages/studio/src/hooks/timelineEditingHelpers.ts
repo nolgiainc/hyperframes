@@ -2,10 +2,9 @@ import { type TimelineElement, usePlayerStore } from "../player/store/playerStor
 import { applyPatchByTarget, readAttributeByTarget } from "../utils/sourcePatcher";
 import {
   formatTimelineAttributeNumber,
-  resolveTimelineStackingReorderByTargetTrack,
   type TimelineStackingReorderIntent,
 } from "../player/components/timelineEditing";
-import { computeReorderZValues, getElementZIndex } from "../player/lib/layerOrdering";
+import { getElementZIndex } from "../player/lib/layerOrdering";
 import { getTimelineElementIdentity } from "../player/lib/timelineElementHelpers";
 import { saveProjectFilesWithHistory } from "../utils/studioFileHistory";
 import { selectedKeyframePercentagesForElement } from "../utils/keyframeSelection";
@@ -37,49 +36,45 @@ export function applyTimelineStackingReorder(input: {
   // Audio has no visual stacking; a vertical drag on it must never write z-index.
   if (input.element.tag === "audio") return;
 
-  const intent =
-    input.stackingReorder ??
-    (input.targetTrack !== input.element.track
-      ? resolveTimelineStackingReorderByTargetTrack({
-          element: input.element,
-          elements: input.timelineElements,
-          targetTrack: input.targetTrack,
-        })
-      : null);
-  if (intent == null || intent.fromIndex === intent.toIndex) return;
+  const intent = input.stackingReorder ?? null;
+  if (intent == null || intent.zIndexChanges.length === 0) return;
 
   const siblingByKey = new Map(
     input.timelineElements.map((el) => [getTimelineElementIdentity(el), el]),
   );
-  const orderedSiblings = intent.siblingKeys
-    .map((key) => siblingByKey.get(key) ?? null)
-    .filter((sibling): sibling is TimelineElement => sibling != null);
-  if (orderedSiblings.length !== intent.siblingKeys.length) return;
+  const commitEntries: Array<{
+    element: HTMLElement;
+    zIndex: number;
+    id?: string;
+    selector?: string;
+    selectorIndex?: number;
+    sourceFile: string;
+    key: string;
+  }> = [];
 
-  const liveEntries = orderedSiblings
-    .map((sibling) => ({ sibling, element: findTimelineElementInIframe(input.iframe, sibling) }))
-    .filter((entry): entry is { sibling: TimelineElement; element: HTMLElement } =>
-      isHTMLElement(entry.element),
-    );
-  if (liveEntries.length !== orderedSiblings.length) return;
+  for (const change of intent.zIndexChanges) {
+    const sibling = siblingByKey.get(change.key);
+    if (!sibling) return;
+    const element = findTimelineElementInIframe(input.iframe, sibling);
+    if (!isHTMLElement(element)) return;
+    if (getElementZIndex(element) === change.zIndex) continue;
+    commitEntries.push({
+      element,
+      zIndex: change.zIndex,
+      id: sibling.domId ?? sibling.id,
+      selector: sibling.selector,
+      selectorIndex: sibling.selectorIndex,
+      sourceFile: sibling.sourceFile || input.activeCompPath || "index.html",
+      key: getTimelineElementIdentity(sibling),
+    });
+  }
 
-  const reordered = [...liveEntries];
-  const [moved] = reordered.splice(intent.fromIndex, 1);
-  if (!moved) return;
-  reordered.splice(intent.toIndex, 0, moved);
-
-  const existingValues = liveEntries.map((entry) => getElementZIndex(entry.element));
-  const zValues = computeReorderZValues(existingValues, intent.fromIndex, intent.toIndex);
-  input.commit?.(
-    reordered.map((entry, index) => ({
-      element: entry.element,
-      zIndex: zValues[index] ?? 0,
-      id: entry.sibling.domId ?? entry.sibling.id,
-      selector: entry.sibling.selector,
-      selectorIndex: entry.sibling.selectorIndex,
-      sourceFile: entry.sibling.sourceFile || input.activeCompPath || "index.html",
-    })),
-  );
+  if (commitEntries.length === 0) return;
+  input.commit?.(commitEntries);
+  const store = usePlayerStore.getState();
+  for (const entry of commitEntries) {
+    store.updateElement(entry.key, { zIndex: entry.zIndex, hasExplicitZIndex: true });
+  }
 }
 
 /**

@@ -35,6 +35,7 @@ export interface TimelineEditCallbacks {
     updates: Pick<TimelineElement, "start" | "duration" | "playbackStart">,
   ) => Promise<void> | void;
   onToggleTrackHidden?: (track: number, hidden: boolean) => Promise<void> | void;
+  onToggleElementHidden?: (elementKey: string, hidden: boolean) => Promise<void> | void;
   onBlockedEditAttempt?: (element: TimelineElement, intent: BlockedTimelineEditIntent) => void;
   onSplitElement?: (element: TimelineElement, splitTime: number) => Promise<void> | void;
   onRazorSplit?: (element: TimelineElement, splitTime: number) => Promise<void> | void;

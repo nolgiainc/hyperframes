@@ -30,6 +30,8 @@ export interface TimelineElement {
   track: number;
   /** Resolved z-index for stacking-aware timeline ordering. */
   zIndex?: number;
+  /** True when the effective z-index was authored inline or through CSS, not auto. */
+  hasExplicitZIndex?: boolean;
   /** Stacking context this element belongs to; root clips use the root composition id. */
   stackingContextId?: string | null;
   /** Nearest parent composition context, matching RuntimeTimelineClip. */
@@ -143,7 +145,10 @@ interface PlayerState {
   updateElement: (
     elementId: string,
     updates: Partial<
-      Pick<TimelineElement, "start" | "duration" | "track" | "playbackStart" | "hidden">
+      Pick<
+        TimelineElement,
+        "start" | "duration" | "track" | "zIndex" | "hasExplicitZIndex" | "playbackStart" | "hidden"
+      >
     >,
   ) => void;
   setZoomMode: (mode: ZoomMode) => void;

@@ -10,7 +10,7 @@
 
 import type { TimelineElement } from "../store/playerStore";
 import type { ClipManifestClip } from "./playbackTypes";
-import { getElementZIndex } from "./layerOrdering";
+import { getElementZIndex, hasExplicitZIndex } from "./layerOrdering";
 import {
   resolveMediaElement,
   applyMediaMetadataFromElement,
@@ -95,9 +95,18 @@ function resolveDomCompositionContext(
   };
 }
 
+function isHTMLElement(element: Element | null): element is HTMLElement {
+  if (!element) return false;
+  const HtmlElementCtor = element.ownerDocument.defaultView?.HTMLElement ?? globalThis.HTMLElement;
+  return typeof HtmlElementCtor !== "undefined" && element instanceof HtmlElementCtor;
+}
+
 function getTimelineElementZIndex(element: Element | null): number | undefined {
-  if (!element || !("style" in element)) return undefined;
-  return getElementZIndex(element as HTMLElement);
+  return isHTMLElement(element) ? getElementZIndex(element) : undefined;
+}
+
+function getTimelineElementHasExplicitZIndex(element: Element | null): boolean {
+  return isHTMLElement(element) ? hasExplicitZIndex(element) : false;
 }
 
 // fallow-ignore-next-line complexity
@@ -160,6 +169,7 @@ export function createTimelineElementFromManifestClip(params: {
     // is captured. clip.zIndex from the runtime is inline-only (0 for CSS rules),
     // so it can only serve as a fallback when the element isn't live.
     zIndex: getTimelineElementZIndex(hostEl) ?? clip.zIndex ?? 0,
+    hasExplicitZIndex: getTimelineElementHasExplicitZIndex(hostEl),
     stackingContextId,
     parentCompositionId,
     compositionAncestors,
@@ -197,6 +207,8 @@ export function createTimelineElementFromManifestClip(params: {
       }
     }
     if (hostEl) {
+      entry.zIndex = getTimelineElementZIndex(hostEl) ?? entry.zIndex;
+      entry.hasExplicitZIndex = getTimelineElementHasExplicitZIndex(hostEl);
       entry.domId = hostEl.id || undefined;
       entry.hfId = hostEl.getAttribute("data-hf-id") || undefined;
       entry.selector = getTimelineElementSelector(hostEl);
@@ -270,6 +282,7 @@ export function createImplicitTimelineLayersFromDOM(
       sourceFile,
       start: 0,
       zIndex: getTimelineElementZIndex(child),
+      hasExplicitZIndex: getTimelineElementHasExplicitZIndex(child),
       stackingContextId: compositionContext.stackingContextId,
       parentCompositionId: compositionContext.parentCompositionId,
       compositionAncestors: compositionContext.compositionAncestors,
@@ -344,6 +357,7 @@ export function parseTimelineFromDOM(doc: Document, rootDuration: number): Timel
       duration: dur,
       track: isNaN(track) ? 0 : track,
       zIndex: getTimelineElementZIndex(el),
+      hasExplicitZIndex: getTimelineElementHasExplicitZIndex(el),
       stackingContextId: compositionContext.stackingContextId,
       parentCompositionId: compositionContext.parentCompositionId,
       compositionAncestors: compositionContext.compositionAncestors,
@@ -468,6 +482,7 @@ export function buildStandaloneRootTimelineElement(params: {
     duration: params.rootDuration,
     track: 0,
     zIndex: 0,
+    hasExplicitZIndex: false,
     stackingContextId: params.compositionId,
     parentCompositionId: null,
     compositionAncestors: [params.compositionId],

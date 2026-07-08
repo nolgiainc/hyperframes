@@ -1,23 +1,46 @@
 import { type TimelineElement } from "../store/playerStore";
 import { resolveContextOrder, resolveStackingContextKey } from "../lib/layerOrdering";
 import { getTimelineElementIdentity } from "../lib/timelineElementHelpers";
-import { toStackingOrderItem, type TimelineStackingOrderItem } from "./timelineEditing";
+import { toStackingOrderItem, type TimelineStackingOrderItem } from "./timelineStacking";
 
-/**
- * Pure timeline track-ordering logic. Timeline rows are ordered by scoped
- * stacking (z-index per stacking context, top = front), with data-track-index
- * used only to split time-overlapping clips of equal rank onto separate rows.
- * Extracted from Timeline.tsx to keep the component under the studio 600-LOC cap.
- *
- * Key derivation and stacking-descriptor mapping are owned by timelineEditing so
- * the row order here and the reorder intent there interpret every element the
- * same way.
- */
+export type TimelineLayerId = string;
 
-type TimelineTrackOrderItem = TimelineStackingOrderItem & { start: number; duration: number };
+export interface StackingTimelineLayer {
+  id: TimelineLayerId;
+  kind: "visual" | "audio";
+  contextKey: string;
+  zIndex: number;
+  placementTrack: number;
+  elements: TimelineElement[];
+}
 
-function toTimelineTrackOrderItem(element: TimelineElement): TimelineTrackOrderItem {
-  return { ...toStackingOrderItem(element), start: element.start, duration: element.duration };
+export interface StackingTimelineLayerGroups {
+  visualLayers: StackingTimelineLayer[];
+  audioLayers: StackingTimelineLayer[];
+  rows: StackingTimelineLayer[];
+}
+
+type TimelineLayerOrderItem = TimelineStackingOrderItem & {
+  start: number;
+  duration: number;
+  index: number;
+  hasExplicitZIndex: boolean;
+  element: TimelineElement;
+};
+
+type BuildLayer = StackingTimelineLayer & {
+  hasExplicitZIndex: boolean;
+};
+
+function toTimelineLayerOrderItem(element: TimelineElement, index: number): TimelineLayerOrderItem {
+  return {
+    ...toStackingOrderItem(element),
+    start: element.start,
+    duration: element.duration,
+    index,
+    hasExplicitZIndex: element.hasExplicitZIndex === true,
+    element,
+  };
 }
 
 function timelineElementsOverlap(
@@ -27,74 +50,120 @@ function timelineElementsOverlap(
   return a.start < b.start + b.duration && b.start < a.start + a.duration;
 }
 
-function trackFrontOrderIndex(
-  elements: readonly TimelineElement[],
-  orderIndexByKey: ReadonlyMap<string, number>,
-): number {
-  let orderIndex = Number.POSITIVE_INFINITY;
-  for (const element of elements) {
-    orderIndex = Math.min(
-      orderIndex,
-      orderIndexByKey.get(getTimelineElementIdentity(element)) ?? Number.POSITIVE_INFINITY,
-    );
+function compareLayerItems(a: TimelineLayerOrderItem, b: TimelineLayerOrderItem): number {
+  if (a.zIndex !== b.zIndex) return b.zIndex - a.zIndex;
+  if (a.hasExplicitZIndex && b.hasExplicitZIndex && a.track !== b.track) {
+    return a.track - b.track;
   }
-  return orderIndex;
+  return a.index - b.index;
 }
 
-function hasOverlappingEqualRankElements(
-  aElements: readonly TimelineElement[],
-  bElements: readonly TimelineElement[],
-): boolean {
-  for (const a of aElements) {
-    const aOrderItem = toTimelineTrackOrderItem(a);
-    const aContextKey = resolveStackingContextKey(aOrderItem);
-    for (const b of bElements) {
-      const bOrderItem = toTimelineTrackOrderItem(b);
-      if (aContextKey !== resolveStackingContextKey(bOrderItem)) continue;
-      if (aOrderItem.zIndex !== bOrderItem.zIndex) continue;
-      if (timelineElementsOverlap(a, b)) return true;
+function buildLayerId(
+  prefix: string,
+  contextKey: string,
+  element: TimelineElement,
+): TimelineLayerId {
+  return `${prefix}:${contextKey}:${getTimelineElementIdentity(element)}`;
+}
+
+function getOrderedContextKeys(items: readonly TimelineLayerOrderItem[]): string[] {
+  const keys: string[] = [];
+  for (const item of resolveContextOrder(items)) {
+    const key = resolveStackingContextKey(item);
+    if (!keys.includes(key)) keys.push(key);
+  }
+  return keys;
+}
+
+function canJoinLayer(layer: BuildLayer, item: TimelineLayerOrderItem): boolean {
+  return (
+    layer.hasExplicitZIndex &&
+    item.hasExplicitZIndex &&
+    layer.contextKey === resolveStackingContextKey(item) &&
+    layer.zIndex === item.zIndex &&
+    layer.elements.every((element) => !timelineElementsOverlap(element, item.element))
+  );
+}
+
+function buildVisualLayerRows(items: readonly TimelineLayerOrderItem[]): StackingTimelineLayer[] {
+  const byContext = new Map<string, TimelineLayerOrderItem[]>();
+  for (const item of items) {
+    const key = resolveStackingContextKey(item);
+    const list = byContext.get(key);
+    if (list) list.push(item);
+    else byContext.set(key, [item]);
+  }
+
+  const rows: StackingTimelineLayer[] = [];
+  for (const contextKey of getOrderedContextKeys(items)) {
+    const contextRows: BuildLayer[] = [];
+    const contextItems = [...(byContext.get(contextKey) ?? [])].sort(compareLayerItems);
+    for (const item of contextItems) {
+      if (!item.hasExplicitZIndex) {
+        contextRows.push({
+          id: buildLayerId("auto", contextKey, item.element),
+          kind: "visual",
+          contextKey,
+          zIndex: item.zIndex,
+          placementTrack: item.element.track,
+          elements: [item.element],
+          hasExplicitZIndex: false,
+        });
+        continue;
+      }
+
+      const existing = contextRows.find((row) => canJoinLayer(row, item));
+      if (existing) {
+        existing.elements.push(item.element);
+        continue;
+      }
+      contextRows.push({
+        id: buildLayerId("layer", contextKey, item.element),
+        kind: "visual",
+        contextKey,
+        zIndex: item.zIndex,
+        placementTrack: item.element.track,
+        elements: [item.element],
+        hasExplicitZIndex: true,
+      });
     }
+    rows.push(...contextRows);
   }
-  return false;
+  return rows;
 }
 
-export function buildStackingTimelineTracks(
+function buildAudioLayerRows(items: readonly TimelineLayerOrderItem[]): StackingTimelineLayer[] {
+  return items.map((item) => ({
+    id: buildLayerId("audio", resolveStackingContextKey(item), item.element),
+    kind: "audio",
+    contextKey: resolveStackingContextKey(item),
+    zIndex: item.zIndex,
+    placementTrack: item.element.track,
+    elements: [item.element],
+  }));
+}
+
+export function buildStackingTimelineLayers(
   elements: readonly TimelineElement[],
-): Array<[number, TimelineElement[]]> {
-  const tracks = new Map<number, TimelineElement[]>();
-  for (const element of elements) {
-    const list = tracks.get(element.track) ?? [];
-    list.push(element);
-    tracks.set(element.track, list);
-  }
-
-  const orderedElements = resolveContextOrder(elements.map(toTimelineTrackOrderItem));
-  const orderIndexByKey = new Map<string, number>();
-  orderedElements.forEach((element, index) => {
-    orderIndexByKey.set(element.key, index);
-  });
-
-  return Array.from(tracks.entries()).sort(([aTrack, aElements], [bTrack, bElements]) => {
-    const aIndex = trackFrontOrderIndex(aElements, orderIndexByKey);
-    const bIndex = trackFrontOrderIndex(bElements, orderIndexByKey);
-    if (aIndex !== bIndex) return aIndex - bIndex;
-    if (hasOverlappingEqualRankElements(aElements, bElements)) return aTrack - bTrack;
-    const aStart = Math.min(...aElements.map((element) => element.start));
-    const bStart = Math.min(...bElements.map((element) => element.start));
-    if (aStart !== bStart) return aStart - bStart;
-    return aTrack - bTrack;
-  });
+): StackingTimelineLayerGroups {
+  const items = elements.map(toTimelineLayerOrderItem);
+  const visualItems = items.filter((item) => item.element.tag !== "audio");
+  const audioItems = items.filter((item) => item.element.tag === "audio");
+  const visualLayers = buildVisualLayerRows(visualItems);
+  const audioLayers = buildAudioLayerRows(audioItems);
+  return {
+    visualLayers,
+    audioLayers,
+    rows: [...visualLayers, ...audioLayers],
+  };
 }
 
 export function insertPreviewTrackOrder(
-  trackOrder: readonly number[],
-  previewTrack: number,
-): number[] {
-  if (trackOrder.includes(previewTrack)) return [...trackOrder];
-  if (trackOrder.length === 0) return [previewTrack];
-  const minTrack = Math.min(...trackOrder);
-  const maxTrack = Math.max(...trackOrder);
-  if (previewTrack < minTrack) return [previewTrack, ...trackOrder];
-  if (previewTrack > maxTrack) return [...trackOrder, previewTrack];
-  return [...trackOrder, previewTrack];
+  layerOrder: readonly TimelineLayerId[],
+  previewLayerId: TimelineLayerId,
+  previewIndex: number,
+): TimelineLayerId[] {
+  if (layerOrder.includes(previewLayerId)) return [...layerOrder];
+  const index = Math.max(0, Math.min(layerOrder.length, Math.round(previewIndex)));
+  return [...layerOrder.slice(0, index), previewLayerId, ...layerOrder.slice(index)];
 }

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TimelineElement } from "../store/playerStore";
 import { usePlayerStore } from "../store/playerStore";
 import { TRACK_H } from "./timelineLayout";
+import { buildStackingTimelineLayers } from "./timelineTrackOrder";
 import type { DraggedClipState } from "./useTimelineClipDrag";
 import { useTimelineClipDrag } from "./useTimelineClipDrag";
 
@@ -38,6 +39,7 @@ describe("useTimelineClipDrag", () => {
     const front = timelineElement({ id: "front", track: 0, zIndex: 3 });
     const middle = timelineElement({ id: "middle", track: 1, zIndex: 2 });
     const back = timelineElement({ id: "back", track: 2, zIndex: 1 });
+    const layers = buildStackingTimelineLayers([front, middle, back]).rows;
     const scroll = document.createElement("div");
     document.body.append(scroll);
     const onMoveElement = vi.fn();
@@ -48,7 +50,8 @@ describe("useTimelineClipDrag", () => {
         scrollRef: { current: scroll },
         ppsRef: { current: 100 },
         durationRef: { current: 10 },
-        trackOrderRef: { current: [0, 1, 2] },
+        trackOrderRef: { current: layers.map((layer) => layer.id) },
+        timelineLayersRef: { current: layers },
         timelineElementsRef: { current: [front, middle, back] },
         onMoveElement,
         onResizeElement: vi.fn(),
@@ -82,6 +85,8 @@ describe("useTimelineClipDrag", () => {
         pointerOffsetY: 0,
         previewStart: back.start,
         previewTrack: back.track,
+        previewLayerId: layers[2]!.id,
+        previewLayerIndex: 2,
         previewStackingReorder: null,
         snapBeatTime: null,
         started: false,
@@ -104,11 +109,11 @@ describe("useTimelineClipDrag", () => {
     expect(onMoveElement).toHaveBeenCalledTimes(1);
     expect(onMoveElement.mock.calls[0]![1]).toMatchObject({
       start: 0,
-      track: 0,
+      track: 2,
       stackingReorder: {
-        fromIndex: 2,
-        toIndex: 0,
-        siblingKeys: ["front", "middle", "back"],
+        contextKey: "root",
+        placement: { type: "onto", layerId: layers[0]!.id },
+        zIndexChanges: [{ key: "back", zIndex: 3 }],
       },
     });
 

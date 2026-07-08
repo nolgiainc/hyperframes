@@ -12,6 +12,7 @@ import type { TimelineElement } from "../store/playerStore";
 import { TRACK_H } from "./timelineLayout";
 import { isMusicTrack } from "../../utils/timelineInspector";
 import { mergeUserBeats } from "../../utils/beatEditing";
+import type { StackingTimelineLayer, TimelineLayerId } from "./timelineTrackOrder";
 
 const BEAT_SNAP_PX = 8;
 const EMPTY_BEAT_TIMES: number[] = [];
@@ -82,6 +83,8 @@ export interface DraggedClipState {
   pointerOffsetY: number;
   previewStart: number;
   previewTrack: number;
+  previewLayerId: TimelineLayerId;
+  previewLayerIndex: number;
   /** Beat time the clip will snap to on drop, for the grid-line highlight. */
   snapBeatTime: number | null;
   /** Sibling-scoped z-index reorder intent resolved from the vertical drag. */
@@ -112,7 +115,8 @@ interface UseTimelineClipDragInput {
   scrollRef: React.RefObject<HTMLDivElement | null>;
   ppsRef: React.RefObject<number>;
   durationRef: React.RefObject<number>;
-  trackOrderRef: React.RefObject<number[]>;
+  trackOrderRef: React.RefObject<TimelineLayerId[]>;
+  timelineLayersRef: React.RefObject<StackingTimelineLayer[]>;
   timelineElementsRef: React.RefObject<TimelineElement[]>;
   onMoveElement?: (
     element: TimelineElement,
@@ -135,6 +139,7 @@ export function useTimelineClipDrag({
   ppsRef,
   durationRef,
   trackOrderRef,
+  timelineLayersRef,
   timelineElementsRef,
   onMoveElement,
   onResizeElement,
@@ -210,7 +215,9 @@ export function useTimelineClipDrag({
           pixelsPerSecond: ppsRef.current,
           trackHeight: TRACK_H,
           maxStart: Math.max(0, durationRef.current - drag.element.duration),
-          trackOrder: trackOrderRef.current,
+          trackOrder: timelineLayersRef.current.map((layer) => layer.placementTrack),
+          layerOrder: trackOrderRef.current,
+          timelineLayers: timelineLayersRef.current,
           stackingElement: drag.element,
           stackingElements: timelineElementsRef.current,
         },
@@ -234,11 +241,13 @@ export function useTimelineClipDrag({
         pointerClientY: clientY,
         previewStart: snap.start,
         previewTrack: nextMove.track,
+        previewLayerId: nextMove.previewLayerId ?? drag.previewLayerId,
+        previewLayerIndex: nextMove.previewLayerIndex ?? drag.previewLayerIndex,
         previewStackingReorder: nextMove.stackingReorder ?? null,
         snapBeatTime: snap.beat,
       };
     },
-    [scrollRef, ppsRef, durationRef, trackOrderRef, timelineElementsRef],
+    [scrollRef, ppsRef, durationRef, trackOrderRef, timelineLayersRef, timelineElementsRef],
   );
 
   const stopClipDragAutoScroll = useCallback(() => {
@@ -505,29 +514,23 @@ export function useTimelineClipDrag({
       clearSuppressedClick();
 
       const hasStackingReorder =
-        drag.previewStackingReorder != null &&
-        drag.previewStackingReorder.fromIndex !== drag.previewStackingReorder.toIndex;
-      const hasChanged =
-        drag.previewStart !== drag.element.start ||
-        drag.previewTrack !== drag.element.track ||
-        hasStackingReorder;
+        drag.previewStackingReorder != null && drag.previewStackingReorder.zIndexChanges.length > 0;
+      const hasChanged = drag.previewStart !== drag.element.start || hasStackingReorder;
       if (!hasChanged) return;
 
       updateElement(drag.element.key ?? drag.element.id, {
         start: drag.previewStart,
-        ...(hasStackingReorder ? {} : { track: drag.previewTrack }),
       });
 
       Promise.resolve(
         onMoveElementRef.current?.(drag.element, {
           start: drag.previewStart,
-          track: drag.previewTrack,
+          track: drag.element.track,
           stackingReorder: drag.previewStackingReorder,
         }),
       ).catch((error) => {
         updateElement(drag.element.key ?? drag.element.id, {
           start: drag.element.start,
-          ...(hasStackingReorder ? {} : { track: drag.element.track }),
         });
         console.error("[Timeline] Failed to persist clip move", error);
       });

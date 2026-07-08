@@ -1,0 +1,287 @@
+import { resolveStackingContextKey } from "../lib/layerOrdering";
+import { getTimelineElementIdentity } from "../lib/timelineElementHelpers";
+import type { StackingTimelineLayer, TimelineLayerId } from "./timelineTrackOrder";
+import {
+  toStackingOrderItem,
+  type TimelineLayerDropPlacement,
+  type TimelineStackingElement,
+  type TimelineStackingReorderIntent,
+  type TimelineStackingZIndexChange,
+} from "./timelineStacking";
+
+const ONTO_ROW_THRESHOLD = 0.35;
+
+export interface TimelineLayerStackingMoveResolution {
+  previewLayerId: TimelineLayerId;
+  previewLayerIndex: number;
+  stackingReorder: TimelineStackingReorderIntent | null;
+}
+
+function isAudioElement(element: TimelineStackingElement): boolean {
+  return element.tag?.toLowerCase() === "audio";
+}
+
+function layerContainsElement(layer: StackingTimelineLayer, key: string): boolean {
+  return layer.elements.some((element) => getTimelineElementIdentity(element) === key);
+}
+
+function addElementChange(
+  changes: TimelineStackingZIndexChange[],
+  key: string,
+  currentZIndex: number,
+  zIndex: number,
+): void {
+  if (currentZIndex !== zIndex) changes.push({ key, zIndex });
+}
+
+function addLayerChanges(
+  changes: TimelineStackingZIndexChange[],
+  layer: StackingTimelineLayer,
+  zIndex: number,
+  excludedKey: string,
+): number {
+  let count = 0;
+  for (const element of layer.elements) {
+    const key = getTimelineElementIdentity(element);
+    if (key === excludedKey) continue;
+    const before = changes.length;
+    addElementChange(changes, key, element.zIndex ?? 0, zIndex);
+    if (changes.length > before) count += 1;
+  }
+  return count;
+}
+
+function getContextLayers(
+  layers: readonly StackingTimelineLayer[],
+  contextKey: string,
+): StackingTimelineLayer[] {
+  return layers.filter((layer) => layer.kind === "visual" && layer.contextKey === contextKey);
+}
+
+function findLayer(
+  layers: readonly StackingTimelineLayer[],
+  id: string,
+): StackingTimelineLayer | null {
+  return layers.find((layer) => layer.id === id) ?? null;
+}
+
+function resolvePlacementZIndexChanges(input: {
+  element: TimelineStackingElement;
+  targetZIndex: number;
+}): TimelineStackingZIndexChange[] {
+  const changes: TimelineStackingZIndexChange[] = [];
+  addElementChange(
+    changes,
+    getTimelineElementIdentity(input.element),
+    input.element.zIndex ?? 0,
+    input.targetZIndex,
+  );
+  return changes;
+}
+
+function buildPushUpCandidate(input: {
+  element: TimelineStackingElement;
+  layers: readonly StackingTimelineLayer[];
+  beforeIndex: number;
+  bottomZIndex: number;
+}): { changes: TimelineStackingZIndexChange[]; siblingChanges: number } {
+  const draggedKey = getTimelineElementIdentity(input.element);
+  const draggedZIndex = input.bottomZIndex + 1;
+  const changes = resolvePlacementZIndexChanges({
+    element: input.element,
+    targetZIndex: draggedZIndex,
+  });
+  let siblingChanges = 0;
+  let requiredZIndex = draggedZIndex + 1;
+  for (let index = input.beforeIndex; index >= 0; index -= 1) {
+    const layer = input.layers[index];
+    if (!layer) continue;
+    const nextZIndex = layer.zIndex >= requiredZIndex ? layer.zIndex : requiredZIndex;
+    siblingChanges += addLayerChanges(changes, layer, nextZIndex, draggedKey);
+    requiredZIndex = nextZIndex + 1;
+  }
+  return { changes, siblingChanges };
+}
+
+function buildPushDownCandidate(input: {
+  element: TimelineStackingElement;
+  layers: readonly StackingTimelineLayer[];
+  afterIndex: number;
+  topZIndex: number;
+}): { changes: TimelineStackingZIndexChange[]; siblingChanges: number } {
+  const draggedKey = getTimelineElementIdentity(input.element);
+  const draggedZIndex = input.topZIndex - 1;
+  const changes = resolvePlacementZIndexChanges({
+    element: input.element,
+    targetZIndex: draggedZIndex,
+  });
+  let siblingChanges = 0;
+  let requiredZIndex = draggedZIndex - 1;
+  for (let index = input.afterIndex; index < input.layers.length; index += 1) {
+    const layer = input.layers[index];
+    if (!layer) continue;
+    const nextZIndex = layer.zIndex <= requiredZIndex ? layer.zIndex : requiredZIndex;
+    siblingChanges += addLayerChanges(changes, layer, nextZIndex, draggedKey);
+    requiredZIndex = nextZIndex - 1;
+  }
+  return { changes, siblingChanges };
+}
+
+function resolveBetweenChanges(input: {
+  element: TimelineStackingElement;
+  layers: readonly StackingTimelineLayer[];
+  beforeLayer: StackingTimelineLayer;
+  afterLayer: StackingTimelineLayer;
+}): TimelineStackingZIndexChange[] {
+  const topZIndex = input.beforeLayer.zIndex;
+  const bottomZIndex = input.afterLayer.zIndex;
+  if (topZIndex - bottomZIndex > 1) {
+    return resolvePlacementZIndexChanges({
+      element: input.element,
+      targetZIndex: Math.floor((topZIndex + bottomZIndex) / 2),
+    });
+  }
+
+  const beforeIndex = input.layers.findIndex((layer) => layer.id === input.beforeLayer.id);
+  const afterIndex = input.layers.findIndex((layer) => layer.id === input.afterLayer.id);
+  const pushUp = buildPushUpCandidate({
+    element: input.element,
+    layers: input.layers,
+    beforeIndex,
+    bottomZIndex,
+  });
+  const pushDown = buildPushDownCandidate({
+    element: input.element,
+    layers: input.layers,
+    afterIndex,
+    topZIndex,
+  });
+  return pushUp.siblingChanges <= pushDown.siblingChanges ? pushUp.changes : pushDown.changes;
+}
+
+export function resolveTimelineLayerZIndexChanges(input: {
+  element: TimelineStackingElement;
+  layers: readonly StackingTimelineLayer[];
+  placement: TimelineLayerDropPlacement;
+}): TimelineStackingReorderIntent | null {
+  if (isAudioElement(input.element)) return null;
+  const contextKey = resolveStackingContextKey(toStackingOrderItem(input.element));
+  const layers = getContextLayers(input.layers, contextKey);
+  let changes: TimelineStackingZIndexChange[] = [];
+
+  if (input.placement.type === "onto") {
+    const target = findLayer(layers, input.placement.layerId);
+    if (!target) return null;
+    changes = resolvePlacementZIndexChanges({
+      element: input.element,
+      targetZIndex: target.zIndex,
+    });
+  } else if (input.placement.type === "above") {
+    const target = findLayer(layers, input.placement.layerId);
+    if (!target) return null;
+    changes = resolvePlacementZIndexChanges({
+      element: input.element,
+      targetZIndex: target.zIndex + 1,
+    });
+  } else if (input.placement.type === "below") {
+    const target = findLayer(layers, input.placement.layerId);
+    if (!target) return null;
+    changes = resolvePlacementZIndexChanges({
+      element: input.element,
+      targetZIndex: target.zIndex - 1,
+    });
+  } else {
+    const beforeLayer = findLayer(layers, input.placement.beforeLayerId);
+    const afterLayer = findLayer(layers, input.placement.afterLayerId);
+    if (!beforeLayer || !afterLayer) return null;
+    changes = resolveBetweenChanges({ element: input.element, layers, beforeLayer, afterLayer });
+  }
+
+  return changes.length > 0
+    ? { contextKey, placement: input.placement, zIndexChanges: changes }
+    : null;
+}
+
+// fallow-ignore-next-line complexity
+function resolveDragPlacement(
+  layers: readonly StackingTimelineLayer[],
+  targetPosition: number,
+): TimelineLayerDropPlacement | null {
+  const first = layers[0];
+  const last = layers[layers.length - 1];
+  if (!first || !last) return null;
+  if (targetPosition < -ONTO_ROW_THRESHOLD) return { type: "above", layerId: first.id };
+  if (targetPosition > layers.length - 1 + ONTO_ROW_THRESHOLD) {
+    return { type: "below", layerId: last.id };
+  }
+
+  const nearestIndex = Math.round(targetPosition);
+  const nearest = layers[nearestIndex];
+  if (nearest && Math.abs(targetPosition - nearestIndex) <= ONTO_ROW_THRESHOLD) {
+    return { type: "onto", layerId: nearest.id };
+  }
+
+  const insertionIndex = Math.max(0, Math.min(layers.length, Math.ceil(targetPosition)));
+  if (insertionIndex <= 0) return { type: "above", layerId: first.id };
+  if (insertionIndex >= layers.length) return { type: "below", layerId: last.id };
+  const before = layers[insertionIndex - 1];
+  const after = layers[insertionIndex];
+  return before && after
+    ? { type: "between", beforeLayerId: before.id, afterLayerId: after.id }
+    : null;
+}
+
+function getPreviewLayerId(
+  draggedKey: string,
+  placement: TimelineLayerDropPlacement,
+): TimelineLayerId {
+  if (placement.type === "onto") return placement.layerId;
+  if (placement.type === "between") {
+    return `preview:${draggedKey}:between:${placement.beforeLayerId}:${placement.afterLayerId}`;
+  }
+  return `preview:${draggedKey}:${placement.type}:${placement.layerId}`;
+}
+
+function getPreviewLayerIndex(
+  layerOrder: readonly TimelineLayerId[],
+  placement: TimelineLayerDropPlacement,
+): number {
+  if (placement.type === "onto") return Math.max(0, layerOrder.indexOf(placement.layerId));
+  if (placement.type === "between") {
+    return Math.max(0, layerOrder.indexOf(placement.afterLayerId));
+  }
+  const targetIndex = Math.max(0, layerOrder.indexOf(placement.layerId));
+  return placement.type === "above" ? targetIndex : targetIndex + 1;
+}
+
+export function resolveTimelineLayerStackingMove(input: {
+  element: TimelineStackingElement;
+  layers: readonly StackingTimelineLayer[];
+  layerOrder: readonly TimelineLayerId[];
+  trackDeltaRaw: number;
+}): TimelineLayerStackingMoveResolution | null {
+  if (isAudioElement(input.element)) return null;
+  const contextKey = resolveStackingContextKey(toStackingOrderItem(input.element));
+  const layerById = new Map(input.layers.map((layer) => [layer.id, layer]));
+  const contextLayers = input.layerOrder
+    .map((id) => layerById.get(id) ?? null)
+    .filter(
+      (layer): layer is StackingTimelineLayer =>
+        layer != null && layer.kind === "visual" && layer.contextKey === contextKey,
+    );
+  const draggedKey = getTimelineElementIdentity(input.element);
+  const currentIndex = contextLayers.findIndex((layer) => layerContainsElement(layer, draggedKey));
+  if (currentIndex < 0) return null;
+
+  const placement = resolveDragPlacement(contextLayers, currentIndex + input.trackDeltaRaw);
+  if (!placement) return null;
+  return {
+    previewLayerId: getPreviewLayerId(draggedKey, placement),
+    previewLayerIndex: getPreviewLayerIndex(input.layerOrder, placement),
+    stackingReorder: resolveTimelineLayerZIndexChanges({
+      element: input.element,
+      layers: contextLayers,
+      placement,
+    }),
+  };
+}
