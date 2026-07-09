@@ -58,7 +58,15 @@ export interface MotionContextToDocsOptions {
 /** motion.dev property → GSAP property. */
 const PROPERTY_MAP: Record<string, string> = { rotate: "rotation" };
 
-/** Extract the balanced `{...}` body following `marker` in `src`. */
+/** Escape regex metacharacters — keys are `\w+` property names today, but a
+ * future caller passing anything else must not silently misparse. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Extract the balanced `{...}` body following `marker` in `src`. Brace
+ * counting does not skip string literals — sound for motion.dev output
+ * (numeric arrays + named eases, never arbitrary strings containing `}`). */
 function balancedBlock(src: string, marker: string): string | null {
   const at = src.indexOf(marker);
   if (at === -1) return null;
@@ -77,7 +85,7 @@ function balancedBlock(src: string, marker: string): string | null {
 
 /** Extract a balanced `[...]` immediately after `key:` inside `src`. */
 function arrayAfterKey(src: string, key: string): string | null {
-  const re = new RegExp(`${key}\\s*:\\s*\\[`);
+  const re = new RegExp(`${escapeRegExp(key)}\\s*:\\s*\\[`);
   const m = re.exec(src);
   if (!m) return null;
   const start = m.index + m[0].length - 1;
@@ -93,7 +101,7 @@ function arrayAfterKey(src: string, key: string): string | null {
 }
 
 function scalarAfterKey(src: string, key: string): string | null {
-  const m = new RegExp(`${key}\\s*:\\s*("[^"]*"|[\\w.]+)`).exec(src);
+  const m = new RegExp(`${escapeRegExp(key)}\\s*:\\s*("[^"]*"|[\\w.]+)`).exec(src);
   return m?.[1] ?? null;
 }
 

@@ -21,7 +21,7 @@
  * frame. Measure it from the render (the card's left/top edge + scaled
  * size), don't guess: a wrong crop reads as motion divergence.
  */
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -72,8 +72,9 @@ const frame = (src, t, vf, dst) => {
 const diff = (a, b, dst) =>
   execFileSync("ffmpeg", ["-y", "-v", "error", "-i", a, "-i", b, "-filter_complex", "blend=all_mode=difference", dst]);
 const psnr = (a, b) => {
-  const err = execSync(`ffmpeg -i ${JSON.stringify(a)} -i ${JSON.stringify(b)} -lavfi psnr -f null - 2>&1`).toString();
-  const m = err.match(/average:([\d.]+|inf)/);
+  // spawnSync with array args (no shell): psnr stats land on stderr
+  const r = spawnSync("ffmpeg", ["-i", a, "-i", b, "-lavfi", "psnr", "-f", "null", "-"], { encoding: "utf8" });
+  const m = (r.stderr || "").match(/average:([\d.]+|inf)/);
   return m ? (m[1] === "inf" ? 99 : Number(m[1])) : NaN;
 };
 
