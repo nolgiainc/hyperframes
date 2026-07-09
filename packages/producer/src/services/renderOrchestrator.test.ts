@@ -30,6 +30,7 @@ import {
   shouldDiscardProbeSessionForPageSideCompositing,
   resolveInversionRetryPlan,
   resolveParallelRouterRetryPlan,
+  restoreEnv,
   shouldPreferParallelDrawElement,
   shouldPreferSingleWorkerDrawElement,
   shouldUseStreamingEncode,
@@ -1829,8 +1830,35 @@ describe("resolveParallelRouterRetryPlan (self-verify retry rollback)", () => {
         deParallelRouter: "reverted",
       });
     } finally {
-      if (prevEnv === undefined) delete process.env.HF_DE_PARALLEL_STREAM;
-      else process.env.HF_DE_PARALLEL_STREAM = prevEnv;
+      restoreEnv("HF_DE_PARALLEL_STREAM", prevEnv);
     }
+  });
+});
+
+describe("restoreEnv (DE parallel-router leak-safety primitive)", () => {
+  const VAR = "HF_DE_PARALLEL_STREAM_TEST_VAR";
+  const prev = process.env[VAR];
+
+  afterEach(() => {
+    if (prev === undefined) delete process.env[VAR];
+    else process.env[VAR] = prev;
+  });
+
+  it("deletes the var when the captured prior value was undefined", () => {
+    process.env[VAR] = "true";
+    restoreEnv(VAR, undefined);
+    expect(process.env[VAR]).toBeUndefined();
+  });
+
+  it("restores the exact prior string value, including a falsy-looking one", () => {
+    process.env[VAR] = "true";
+    restoreEnv(VAR, "false");
+    expect(process.env[VAR]).toBe("false");
+  });
+
+  it("is a no-op shape when there was nothing to restore", () => {
+    delete process.env[VAR];
+    restoreEnv(VAR, undefined);
+    expect(process.env[VAR]).toBeUndefined();
   });
 });
