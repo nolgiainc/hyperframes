@@ -117,6 +117,10 @@ describe("Timeline provider boundary", () => {
       );
     });
 
+    // Flush passive effects (ResizeObserver-driven layout) so the gutter row is
+    // mounted before we query it.
+    act(() => {});
+
     const button = host.querySelector<HTMLButtonElement>('button[aria-label="Show track 0"]');
     expect(button).not.toBeNull();
     if (!button) throw new Error("Expected a track visibility toggle");

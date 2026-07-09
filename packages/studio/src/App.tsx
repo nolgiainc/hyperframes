@@ -11,6 +11,7 @@ import { usePanelLayout } from "./hooks/usePanelLayout";
 import { useFileManager } from "./hooks/useFileManager";
 import { usePreviewPersistence } from "./hooks/usePreviewPersistence";
 import { useTimelineEditing } from "./hooks/useTimelineEditing";
+import type { TimelineZIndexReorderCommit } from "./hooks/useTimelineEditingTypes";
 import type { BlockPreviewInfo } from "./components/sidebar/BlocksTab";
 import { useDomEditSession } from "./hooks/useDomEditSession";
 import { useSdkSelectionSync } from "./hooks/useSdkSelectionSync";
@@ -20,7 +21,7 @@ import { useBlockHandlers } from "./hooks/useBlockHandlers";
 import { useAppHotkeys } from "./hooks/useAppHotkeys";
 import { useClipboard } from "./hooks/useClipboard";
 import { readStudioUiPreferences, writeStudioUiPreferences } from "./utils/studioUiPreferences";
-import { selectedKeyframePercentagesForElement } from "./utils/keyframeSelection";
+import { deleteSelectedKeyframes } from "./hooks/timelineEditingHelpers";
 import { useCaptionDetection } from "./hooks/useCaptionDetection";
 import { useRenderClipContent } from "./hooks/useRenderClipContent";
 import { useConsoleErrorCapture } from "./hooks/useConsoleErrorCapture";
@@ -126,6 +127,7 @@ export function StudioApp() {
   });
   const editHistory = usePersistentEditHistory({ projectId });
   const domEditSaveTimestampRef = useRef(0);
+  const handleDomZIndexReorderCommitRef = useRef<TimelineZIndexReorderCommit | null>(null);
   const pendingTimelineEditPathRef = useRef(new Set<string>());
   const isGestureRecordingRef = useRef(false);
   const reloadPreview = useCallback(() => setRefreshKey((k) => k + 1), []);
@@ -183,6 +185,7 @@ export function StudioApp() {
     isRecordingRef: isGestureRecordingRef,
     sdkSession: editFlowSdkSession,
     forceReloadSdkSession: sdkHandle.forceReload,
+    handleDomZIndexReorderCommitRef,
   });
   const {
     activeBlockParams,
@@ -301,19 +304,12 @@ export function StudioApp() {
     forceReloadSdkSession: sdkHandle.forceReload,
   });
   domEditSelectionBridgeRef.current = domEditSession.domEditSelection;
+  handleDomZIndexReorderCommitRef.current = domEditSession.handleDomZIndexReorderCommit;
   clearDomSelectionRef.current = domEditSession.clearDomSelection;
   handleDomEditElementDeleteRef.current = domEditSession.handleDomEditElementDelete;
   resetKeyframesRef.current = domEditSession.handleResetSelectedElementKeyframes;
   invalidateGsapCacheRef.current = domEditSession.invalidateGsapCache;
-  deleteSelectedKeyframesRef.current = () => {
-    const { selectedKeyframes, selectedElementId } = usePlayerStore.getState();
-    const a = domEditSession.selectedGsapAnimations.find((x) => x.keyframes);
-    if (!a) return;
-    // Only the active element's keyframes; a stale cross-element selection must not delete here.
-    for (const p of selectedKeyframePercentagesForElement(selectedKeyframes, selectedElementId)) {
-      domEditSession.handleGsapRemoveKeyframe(a.id, p);
-    }
-  };
+  deleteSelectedKeyframesRef.current = () => deleteSelectedKeyframes(domEditSession);
   useSdkSelectionSync(
     editFlowSdkSession,
     domEditSession.domEditSelection,
@@ -524,6 +520,7 @@ export function StudioApp() {
                       handleTimelineElementMove={timelineEditing.handleTimelineElementMove}
                       handleTimelineElementResize={timelineEditing.handleTimelineElementResize}
                       handleToggleTrackHidden={timelineEditing.handleToggleTrackHidden}
+                      handleToggleElementHidden={timelineEditing.handleToggleElementHidden}
                       handleBlockedTimelineEdit={timelineEditing.handleBlockedTimelineEdit}
                       handleTimelineElementSplit={timelineEditing.handleTimelineElementSplit}
                       handleRazorSplit={timelineEditing.handleRazorSplit}

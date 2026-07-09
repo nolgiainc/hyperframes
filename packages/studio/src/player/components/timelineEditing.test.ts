@@ -10,8 +10,10 @@ import {
   resolveTimelineAutoScroll,
   resolveTimelineMove,
   resolveTimelineResize,
+  snapKeyframePctToBeat,
   type TimelinePromptElement,
 } from "./timelineEditing";
+import { buildStackingTimelineLayers } from "./timelineTrackOrder";
 
 describe("resolveTimelineMove", () => {
   it("moves timing based on horizontal drag and snaps to centiseconds", () => {
@@ -154,6 +156,67 @@ describe("resolveTimelineMove", () => {
         200,
       ),
     ).toEqual({ start: 2, track: 2 });
+  });
+
+  it("snaps conflicting vertical stacking movement to a new lane without changing data-track-index", () => {
+    const stackingElements = [
+      {
+        id: "root-front",
+        tag: "div",
+        start: 0,
+        duration: 2,
+        track: 0,
+        zIndex: 2,
+        hasExplicitZIndex: true,
+        stackingContextId: "root",
+        parentCompositionId: null,
+        compositionAncestors: ["root"],
+      },
+      {
+        id: "root-back",
+        tag: "div",
+        start: 0,
+        duration: 2,
+        track: 1,
+        zIndex: 1,
+        hasExplicitZIndex: true,
+        stackingContextId: "root",
+        parentCompositionId: null,
+        compositionAncestors: ["root"],
+      },
+    ];
+    const layers = buildStackingTimelineLayers(stackingElements).rows;
+    const result = resolveTimelineMove(
+      {
+        start: 0,
+        track: 1,
+        duration: 2,
+        originClientX: 0,
+        originClientY: 0,
+        pixelsPerSecond: 100,
+        trackHeight: 72,
+        maxStart: 8,
+        trackOrder: [0, 1],
+        layerOrder: layers.map((layer) => layer.id),
+        timelineLayers: layers,
+        stackingElement: stackingElements[1],
+        stackingElements,
+      },
+      0,
+      -72,
+    );
+
+    expect(result).toEqual({
+      start: 0,
+      track: 1,
+      previewLayerId: `preview:root-back:above:${layers[0]!.id}`,
+      previewLayerIndex: 0,
+      stackingReorder: {
+        contextKey: "root",
+        placement: { type: "above", layerId: layers[0]!.id },
+        zIndexChanges: [{ key: "root-back", zIndex: 3 }],
+      },
+    });
   });
 });
 
@@ -611,5 +674,36 @@ describe("buildPromptCopyText", () => {
     expect(buildPromptCopyText("  Tighten the headline timing  ")).toBe(
       "Tighten the headline timing",
     );
+  });
+});
+
+describe("snapKeyframePctToBeat", () => {
+  // el spans 0–10s, so clip-% maps to composition time as pct * 0.1s.
+  // At pps=100 the snap window is 8 / 100 = 0.08s.
+  const el = { start: 0, duration: 10 };
+  const beats = [2, 5, 8];
+
+  it("snaps a keyframe within ~8px of a beat exactly onto it", () => {
+    // pct 50.5 → 5.05s, 0.05s from the beat at 5s (inside 0.08s window) → 50%.
+    expect(snapKeyframePctToBeat(el, 50.5, beats, 100)).toBe(50);
+  });
+
+  it("leaves a keyframe unchanged when no beat is within the window", () => {
+    // pct 55 → 5.5s, 0.5s from the nearest beat → free.
+    expect(snapKeyframePctToBeat(el, 55, beats, 100)).toBe(55);
+  });
+
+  it("is a no-op when there are no beats", () => {
+    expect(snapKeyframePctToBeat(el, 50.5, [], 100)).toBe(50.5);
+    expect(snapKeyframePctToBeat(el, 50.5, undefined, 100)).toBe(50.5);
+  });
+
+  it("is a no-op for a zero-duration clip", () => {
+    expect(snapKeyframePctToBeat({ start: 0, duration: 0 }, 50.5, beats, 100)).toBe(50.5);
+  });
+
+  it("widens the snap window as zoom (pps) decreases", () => {
+    // pct 53 → 5.3s, 0.3s from the beat at 5s. At pps=20 the window is 0.4s → snaps to 50%.
+    expect(snapKeyframePctToBeat(el, 53, beats, 20)).toBe(50);
   });
 });

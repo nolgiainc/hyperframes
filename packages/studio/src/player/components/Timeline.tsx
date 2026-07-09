@@ -23,11 +23,15 @@ import {
 import { useTimelineClipDrag } from "./useTimelineClipDrag";
 import { ClipContextMenu } from "./ClipContextMenu";
 import { TimelineShortcutHint } from "./TimelineShortcutHint";
+import { buildStackingTimelineLayers, insertPreviewTrackOrder } from "./timelineTrackOrder";
+import { getTimelineLayerGroupHeaderTotalHeight } from "./TimelineLayerGroupHeader";
 import {
   GUTTER,
-  generateTicks,
+  generateVisibleTicks,
   getTimelineCanvasHeight,
   shouldShowTimelineShortcutHint,
+  computeTimelineBasisDuration,
+  computeTimelineEffectiveDuration,
 } from "./timelineLayout";
 import { useResolvedTimelineEditCallbacks } from "./useResolvedTimelineEditCallbacks";
 import type { TimelineProps } from "./TimelineTypes";
@@ -178,39 +182,29 @@ export const Timeline = memo(function Timeline({
     if (shortcutHintRafRef.current) cancelAnimationFrame(shortcutHintRafRef.current);
   });
 
-  const effectiveDuration = useMemo(() => {
-    const safeDur = Number.isFinite(duration) ? duration : 0;
-    if (rawElements.length === 0) return safeDur;
-    const maxEnd = Math.max(...rawElements.map((el) => el.start + el.duration));
-    const result = Math.max(safeDur, maxEnd);
-    return Number.isFinite(result) ? result : safeDur;
-  }, [rawElements, duration]);
-
-  const tracks = useMemo(() => {
-    const map = new Map<number, typeof expandedElements>();
-    for (const el of expandedElements) {
-      const list = map.get(el.track) ?? [];
-      list.push(el);
-      map.set(el.track, list);
-    }
-    return Array.from(map.entries()).sort(([a], [b]) => a - b);
-  }, [expandedElements]);
+  const tracks = useMemo(
+    () => buildStackingTimelineLayers(expandedElements).rows,
+    [expandedElements],
+  );
 
   const trackStyles = useMemo(() => {
-    const map = new Map<number, TrackVisualStyle>();
-    for (const [trackNum, els] of tracks) {
-      map.set(trackNum, getTrackStyle(els[0]?.tag ?? ""));
+    const map = new Map<string, TrackVisualStyle>();
+    for (const layer of tracks) {
+      map.set(layer.id, getTrackStyle(layer.elements[0]?.tag ?? ""));
     }
     return map;
   }, [tracks]);
 
-  const trackOrder = useMemo(() => tracks.map(([trackNum]) => trackNum), [tracks]);
+  const trackOrder = useMemo(() => tracks.map((layer) => layer.id), [tracks]);
   const trackOrderRef = useRef(trackOrder);
   trackOrderRef.current = trackOrder;
+  const timelineLayersRef = useRef(tracks);
+  timelineLayersRef.current = tracks;
+  const expandedElementsRef = useRef(expandedElements);
+  expandedElementsRef.current = expandedElements;
 
   const ppsRef = useRef(100);
-  const durationRef = useRef(effectiveDuration);
-  durationRef.current = effectiveDuration;
+  const durationRef = useRef(Number.isFinite(duration) ? duration : 0);
 
   // Stable ref so useTimelineClipDrag can clear rangeSelection without circular dep
   const setRangeSelectionRef = useRef<((sel: null) => void) | null>(null);
@@ -226,8 +220,9 @@ export const Timeline = memo(function Timeline({
   } = useTimelineClipDrag({
     scrollRef,
     ppsRef,
-    durationRef,
     trackOrderRef,
+    timelineLayersRef,
+    timelineElementsRef: expandedElementsRef,
     onMoveElement,
     onResizeElement,
     onBlockedEditAttempt,
@@ -235,17 +230,42 @@ export const Timeline = memo(function Timeline({
     setRangeSelectionRef,
   });
 
+  // basis drives the zoom (committed); effective adds the live preview (see timelineLayout).
+  const basisDuration = useMemo(
+    () =>
+      computeTimelineBasisDuration(
+        duration,
+        rawElements.map((el) => el.start + el.duration),
+      ),
+    [rawElements, duration],
+  );
+  const effectiveDuration = useMemo(
+    () =>
+      computeTimelineEffectiveDuration(basisDuration, [
+        draggedClip?.started ? draggedClip.previewStart + draggedClip.element.duration : null,
+        resizingClip?.started ? resizingClip.previewStart + resizingClip.previewDuration : null,
+      ]),
+    [basisDuration, draggedClip, resizingClip],
+  );
+  durationRef.current = effectiveDuration;
+
   const displayTrackOrder = useMemo(() => {
     if (
       !draggedClip?.started ||
       trackOrder.length === 0 ||
-      trackOrder.includes(draggedClip.previewTrack)
+      trackOrder.includes(draggedClip.previewLayerId)
     )
       return trackOrder;
-    return [...trackOrder, draggedClip.previewTrack].sort((a, b) => a - b);
+    return insertPreviewTrackOrder(
+      trackOrder,
+      draggedClip.previewLayerId,
+      draggedClip.previewLayerIndex,
+    );
   }, [draggedClip, trackOrder]);
 
-  const totalH = getTimelineCanvasHeight(displayTrackOrder.length);
+  const totalH =
+    getTimelineCanvasHeight(displayTrackOrder.length) +
+    getTimelineLayerGroupHeaderTotalHeight(displayTrackOrder, tracks);
   const keyframeCache = usePlayerStore((s) => s.keyframeCache);
   const selectedKeyframes = usePlayerStore((s) => s.selectedKeyframes);
   const toggleSelectedKeyframe = usePlayerStore((s) => s.toggleSelectedKeyframe);
@@ -258,9 +278,10 @@ export const Timeline = memo(function Timeline({
   const selectedElementRef = useRef<TimelineElement | null>(selectedElement);
   selectedElementRef.current = selectedElement;
 
+  // Fit to basisDuration, not effectiveDuration, so a live drag can't rezoom.
   const fitPps =
-    viewportWidth > GUTTER && effectiveDuration > 0
-      ? (viewportWidth - GUTTER - 2) / effectiveDuration
+    viewportWidth > GUTTER && basisDuration > 0
+      ? (viewportWidth - GUTTER - 2) / basisDuration
       : 100;
   const pps = getTimelinePixelsPerSecond(fitPps, zoomMode, manualZoomPercent);
   ppsRef.current = pps;
@@ -341,8 +362,8 @@ export const Timeline = memo(function Timeline({
   });
 
   const { major, minor } = useMemo(
-    () => generateTicks(effectiveDuration, pps),
-    [effectiveDuration, pps],
+    () => generateVisibleTicks(effectiveDuration, pps, viewportWidth, GUTTER),
+    [effectiveDuration, pps, viewportWidth],
   );
   const majorTickInterval = major.length >= 2 ? major[1] - major[0] : effectiveDuration;
 
@@ -373,6 +394,7 @@ export const Timeline = memo(function Timeline({
     ppsRef,
     durationRef,
     trackOrderRef,
+    timelineLayersRef,
     onFileDrop,
     onAssetDrop,
     onBlockDrop,
