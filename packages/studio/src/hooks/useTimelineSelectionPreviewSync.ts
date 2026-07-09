@@ -26,10 +26,24 @@ function orderSelectedIds(ids: Set<string>, anchor: string | null): string[] {
   return [anchor, ...ordered.filter((id) => id !== anchor)];
 }
 
-function selectionIdsMatch(currentIds: string[], selectedIds: string[]): boolean {
-  if (currentIds.length !== selectedIds.length) return false;
+function selectionIdsMatch(
+  currentIds: string[],
+  selectedIds: string[],
+  currentAnchor: string | null,
+  wantedAnchor: string | null,
+): boolean {
+  // Compare as sets in BOTH directions: length equality misreads duplicates (two DOM
+  // children resolving to the same clip id) as a full match and skips mirroring the
+  // members that never made it into the preview.
+  const current = new Set(currentIds);
   const selected = new Set(selectedIds);
-  return currentIds.every((id) => selected.has(id));
+  if (current.size !== selected.size) return false;
+  for (const id of selected) {
+    if (!current.has(id)) return false;
+  }
+  // The primary/anchor must also agree, or a change of just the anchor within the
+  // same set would never re-sync the preview's primary selection.
+  return currentAnchor === wantedAnchor;
 }
 
 export function useTimelineSelectionPreviewSync({
@@ -61,12 +75,15 @@ export function useTimelineSelectionPreviewSync({
         resolveTimelineIdForSelection(selection, timelineElements, activeCompPath),
       )
       .filter((id): id is string => Boolean(id));
+    const currentAnchor = domEditSelection
+      ? resolveTimelineIdForSelection(domEditSelection, timelineElements, activeCompPath)
+      : null;
 
     if (selectedIds.length === 0) {
       if (currentSelections.length > 0) applyDomSelection(null, { revealPanel: false });
       return;
     }
-    if (selectionIdsMatch(currentIds, selectedIds)) return;
+    if (selectionIdsMatch(currentIds, selectedIds, currentAnchor, selectedElementId)) return;
 
     let cancelled = false;
     const syncSelection = async () => {
@@ -98,6 +115,7 @@ export function useTimelineSelectionPreviewSync({
     buildDomSelectionForTimelineElement,
     domEditGroupSelections,
     domEditSelection,
+    selectedElementId,
     selectedIds,
     selectedKey,
     timelineElements,
