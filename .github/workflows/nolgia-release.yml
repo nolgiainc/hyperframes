@@ -1,0 +1,70 @@
+name: Nolgia runtime release
+
+# Builds the HyperFrames browser runtime IIFE from the tagged commit and
+# attaches it to a GitHub Release. See NOLGIA.md for the release convention.
+# Tag format: nolgia-vX.Y.Z (prefix chosen so upstream v* triggers never fire).
+
+permissions: {}
+
+on:
+  push:
+    tags:
+      - "nolgia-v*"
+
+jobs:
+  build-and-release:
+    name: Build runtime and attach artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Resolve version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#nolgia-v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Build runtime artifact
+        env:
+          HYPERFRAME_RUNTIME_VERSION: ${{ steps.version.outputs.version }}
+          HYPERFRAME_RUNTIME_BUILD_ID: ${{ github.ref_name }}+${{ github.sha }}
+        run: bun run --filter @hyperframes/core build:hyperframes-runtime
+
+      - name: Stage release assets
+        id: assets
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p release-assets
+          cp packages/core/dist/hyperframe.runtime.iife.js \
+            "release-assets/hyperframes-runtime-${VERSION}.js"
+          cp packages/core/dist/hyperframe.manifest.json \
+            release-assets/hyperframe.manifest.json
+          (cd release-assets && shasum -a 256 ./* > SHA256SUMS)
+          cat release-assets/SHA256SUMS
+          SHA256=$(shasum -a 256 "release-assets/hyperframes-runtime-${VERSION}.js" | cut -d' ' -f1)
+          echo "sha256=${SHA256}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release with artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA256: ${{ steps.assets.outputs.sha256 }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Nolgia runtime ${VERSION}" \
+            --notes "HyperFrames browser runtime \`hyperframes-runtime-${VERSION}.js\` built from \`${GITHUB_SHA}\`.
+
+sha256: \`${SHA256}\`
+
+Consumers and rollout checklist: see NOLGIA.md." \
+  release-assets/*
