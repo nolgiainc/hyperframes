@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 const thisDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(thisDir, "..");
@@ -42,7 +42,7 @@ writeFileSync(
 );
 
 try {
-  execSync(`bunx oxfmt ${outPath}`, { stdio: "ignore" });
+  execFileSync("bunx", ["oxfmt", outPath], { stdio: "ignore" });
 } catch {
   // Formatting is best effort when the generator runs in a minimal environment.
 }
