@@ -3,8 +3,14 @@
 # before this workflow can run.
 #
 # Languages were taken from the existing default-setup config (JS/TS, Python,
-# Actions). Triggers mirror what default setup ran: push to main, every PR
-# against main, and a weekly schedule.
+# Actions).
+#
+# CodeQL scans the whole codebase (not the PR diff), so per-PR gating adds no
+# signal a push-to-main + scheduled scan doesn't already provide — it just sat
+# on the PR critical path. Triggers: push to main, a weekly schedule, and
+# manual dispatch. The `pull_request` trigger was removed to take this off the
+# PR blocking path (main is not branch-protected, so no required check is
+# stranded).
 #
 # The rules and path filters live in .github/codeql/codeql-config.yml so policy
 # changes show up as a normal PR diff.
@@ -13,11 +19,14 @@ name: CodeQL
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
   schedule:
-    # Mondays at 14:39 UTC — matches the cadence default setup was running on.
-    - cron: "39 14 * * 1"
+    # Mondays at 03:27 UTC — weekly full-codebase scan.
+    - cron: "27 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze:
