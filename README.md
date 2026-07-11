@@ -29,185 +29,57 @@
   <img src="docs/public/images/hyperframes-logo-motion-1280-trimmed.webp" alt="HyperFrames demo: HTML code on the left transforms into a rendered video on the right" width="800">
 </p>
 
-HyperFrames is an open-source framework for turning HTML, CSS, media, and seekable animations into deterministic MP4 videos. Use it locally with the CLI, from AI coding agents with skills, or as the rendering core behind hosted authoring workflows.
+HyperFrames is an open-source framework for turning HTML, CSS, media, and seekable animations into video. It is the rendering core behind hosted authoring workflows, an agent-friendly CLI, and a browser Studio.
 
-## Quick Start
+> **Nolgia fork:** this repository is [`nolgiainc/hyperframes`](https://github.com/nolgiainc/hyperframes), a maintained fork of [`heygen-com/hyperframes`](https://github.com/heygen-com/hyperframes). Product identity, package names, and upstream documentation remain HyperFrames/HeyGen. Fork-owned browser-runtime artifacts and their release/consumer checklist are documented in [NOLGIA.md](NOLGIA.md); do not assume an upstream npm package or CDN contains those fork-only artifacts.
+
+## Quick start
 
 ### With an AI coding agent
 
-Install the HyperFrames skills, then describe the video you want:
+Install the current skills from the repository, then start with `/hyperframes`:
 
 ```bash
 npx skills add heygen-com/hyperframes --full-depth --yes
 ```
 
-> `--full-depth` does a full clone of the repo's current `main`. Without it, `skills add` fetches the skills.sh registry blob, which lags `main` by hours — you'd get an older copy of a skill. (`hyperframes skills update` already installs full-depth.)
-
-Try a prompt like:
-
-> Using `/hyperframes`, create a 10-second product intro with a fade-in title, a background video, and subtle background music.
-
-The skills teach agents the HyperFrames production loop: plan the video, write valid HTML, wire seekable animations, add media, lint, preview, and render. They work with Claude Code, Cursor, Gemini CLI, Codex, and other coding agents that support skills.
-
-## Skills
-
-HyperFrames ships 20 skills agents load on demand. Read `/hyperframes` first — it's the router and capability map; it picks a workflow for any "make me a…" request — video, deck, or composition port — and points to the domain skills below.
-
-Run `npx skills add heygen-com/hyperframes --full-depth` for the interactive picker, `npx skills add heygen-com/hyperframes --all --full-depth` to install all 20 at once (skips the picker), or `npx skills add heygen-com/hyperframes --skill <name> --full-depth` for just one (bare name, no leading `/`). Keep `--full-depth` — it installs the current `main`; without it `skills add` fetches the skills.sh blob, which lags by hours.
-
-Installs stay lean after that: `npx hyperframes init` keeps the **core set** fresh (the router, the `hyperframes-*` domain skills, and `media-use` — plus whatever is already installed; `/figma` stays on demand) and never expands a partial install; the creation workflows install **on demand** — the router runs `npx hyperframes skills update <workflow>` before entering one. Nothing re-pulls the full set behind your back.
-
-### Router
-
-| Skill          | Use when                                                                                                                                                                                                  |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/hyperframes` | **Read first** for any request to make / create / edit / animate / render a video, animation, or motion graphic. Capability map for the domain skills and intent router for the creation workflows below. |
-
-### Creation workflows
-
-| Skill                      | Use when                                                                                                                                                                                 |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/product-launch-video`    | Marketing / launching / promoting a **product** — from its URL, a brief, or a script (even if the site is only named). Up to ~3 min (sweet spot 30-90s).                                 |
-| `/website-to-video`        | Turning a **general website** into a video — site tour, portfolio / landing-page showcase, social clip from the site's own visuals.                                                      |
-| `/faceless-explainer`      | **Explaining a topic / concept** from arbitrary text — no product, no URL, no website capture; every visual is LLM-invented (typography / abstract / diagram / data-viz).                |
-| `/pr-to-video`             | A **GitHub pull request** (PR URL, `owner/repo#N` ref, or "this PR") → changelog / feature-reveal / fix / refactor explainer, read via the `gh` CLI.                                     |
-| `/embedded-captions`       | Adding **captions / subtitles** to an existing talking-head video (footage untouched) — verbatim rail, embedded climax behind the subject, or pure-cinematic embed.                      |
-| `/talking-head-recut`      | Packaging an existing talking-head / interview / podcast video with **designed graphic overlays** — lower-thirds, data callouts, kinetic titles, pull-quotes, side panels, PiP.          |
-| `/motion-graphics`         | A short, **unnarrated, design-led motion graphic** (~under 10s) — kinetic type, stat / chart hit, logo sting, lower-third, animated tweet / headline. MP4 or transparent overlay.        |
-| `/music-to-video`          | A **music track** (audio file, or video to pull audio from) → a **beat-synced** video — lyric, slideshow, or kinetic promo; music drives pacing.                                         |
-| `/slideshow`               | A **presentation / pitch deck / interactive deck** — discrete slides, fragment reveals, branching, hotspot navigation, presenter mode. Output is a navigable deck, not a rendered video. |
-| `/general-video`           | **Anything else** — longer or multi-scene pieces, brand / sizzle reel, title card, static loop, freeform composition. Input- and length-agnostic fallback.                               |
-| `/remotion-to-hyperframes` | **Porting an existing Remotion** (React) composition's source to HyperFrames HTML. One-way migration, not creation.                                                                      |
-
-### Domain skills (loaded on demand)
-
-Atomic capabilities the creation workflows compose against — pull one when you need that specific layer.
-
-| Skill                    | Covers                                                                                                                                                                                                                                                                                                                                           |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/hyperframes-core`      | The composition contract — `data-*` timing attributes, `class="clip"`, tracks, sub-compositions, variables, framework-owned media playback, determinism rules.                                                                                                                                                                                   |
-| `/hyperframes-animation` | All animation knowledge — atomic motion rules, scene blueprints, transitions, runtime adapters (GSAP / Lottie / Three.js / Anime.js / CSS / WAAPI / TypeGPU).                                                                                                                                                                                    |
-| `/hyperframes-keyframes` | Seek-safe keyframe authoring across runtimes — GSAP timelines, CSS keyframes, Anime.js, WAAPI, FLIP, paths, masks, SVG morph/draw, 3D depth — plus `hyperframes keyframes` diagnostics for rendered motion.                                                                                                                                      |
-| `/hyperframes-creative`  | Non-animation creative direction — `frame.md` / `design.md`, palettes, typography, narration, beat planning, audio-reactive visuals, composition patterns.                                                                                                                                                                                       |
-| `/media-use`             | The media OS — resolve any media need (BGM, SFX, image, icon, logo, voice, color grade, LUT) into a frozen local file or paste-ready block + ledger record, generate via TTS/music/image models when the catalog misses, transcribe, caption, remove backgrounds, and reuse assets across projects. One shared audio engine + manifest tracking. |
-| `/hyperframes-cli`       | CLI dev loop — `init`, `lint`, `validate`, `inspect`, `preview`, `render`, `publish`, `doctor`, plus AWS Lambda cloud rendering (`lambda deploy / render / progress`).                                                                                                                                                                           |
-| `/hyperframes-registry`  | Install and wire registry blocks and components into compositions via `hyperframes add`. Authoring a new block or component to contribute upstream.                                                                                                                                                                                              |
-| `/figma`                 | Import Figma assets, tokens, components, and storyboard sections → reconstructed motion (frames read as states, not slides) (REST/CLI) plus Motion animations (MCP) and shaders (MCP source / native export) into a composition.                                                                                                                 |
-
-For visual design handoff workflows, see the [Claude Design guide](https://hyperframes.heygen.com/guides/claude-design) and [Open Design guide](https://hyperframes.heygen.com/guides/open-design).
+`--full-depth` clones the current repository instead of using the skills.sh registry snapshot. The router guides an agent through planning, HTML composition, seekable animation, media, linting, preview, and rendering. It works with coding agents that support the skills format, including Claude Code, Cursor, Gemini CLI, and Codex.
 
 ### Manually with the CLI
 
+The published `hyperframes` CLI needs Node.js 22+ and FFmpeg for local video encoding. `init` opens a wizard on an interactive TTY; use explicit flags and `--non-interactive` in CI or agent runs:
+
 ```bash
-npx hyperframes init my-video
+npx hyperframes init my-video --example blank --non-interactive
 cd my-video
-npx hyperframes preview      # preview in browser with live reload
-npx hyperframes render       # render to MP4
+npx hyperframes lint
+npx hyperframes preview --no-open   # local Studio with live reload
+npx hyperframes render --output renders/output.mp4
 ```
 
-**Requirements:** Node.js 22+, FFmpeg
+Use `--skip-skills` or `HYPERFRAMES_SKIP_SKILLS=1` when a fully offline scaffold is required. `npx hyperframes doctor` reports the Node.js, FFmpeg/FFprobe, Chrome, and Docker capabilities available to the CLI.
 
-## What You Can Build
+## CLI and Studio
 
-Need ideas? Browse the [Showcase](https://hyperframes.heygen.com/showcase) for finished videos you can watch, read, run, and remix.
+The CLI and Studio are complementary surfaces:
 
-- Product launch videos and feature announcements
-- PR walkthroughs with animated code diffs, narration, and captions
-- Data visualizations, chart races, and map animations
-- Social videos with kinetic captions, overlays, and music
-- Docs-to-video, PDF-to-video, and website-to-video explainers
-- Reusable motion graphics for automated content pipelines
+- `hyperframes init` scaffolds a project, optionally importing media and selecting a template.
+- `hyperframes preview` starts the embedded Studio server and opens the project in a browser. It defaults to port 3002; `--no-open`, `--port`, `--list`, and `--kill-all` make it scriptable.
+- `hyperframes lint`, `validate`, and `inspect` cover static structure, a headless-browser runtime/contrast pass, and timestamped layout checks respectively.
+- `hyperframes render` captures frames and encodes MP4, WebM, MOV, GIF, or PNG sequences. `--docker` selects the reproducible Docker path; `--workers` controls parallel capture.
+- `hyperframes catalog` lists registry items (table by default, JSON for automation, or `--human-friendly` for an interactive picker); `hyperframes add <name>` installs one.
+- `hyperframes cloud`, `lambda`, and `cloudrun` are the managed, AWS, and GCP render surfaces described below.
 
-## Frame.md
+Studio is the browser editor package (`@hyperframes/studio`) used by `preview`; it is not a second renderer. Contributors can run the workspace Studio directly with `bun run dev` (Vite serves it on port 5190) while the CLI preview remains the normal project workflow.
 
-**frame.md — your design system, ready for video.**
+## Agent workflow and composition contract
 
-Every brand has a `design.md`. None of them were written for a camera. `frame.md` is the missing translation layer: it takes your web-context design spec and inverts it for the frame — the same tokens, the same rules, but rewritten so an AI agent can compose a promo video without guessing at scale or reaching for web chrome.
-
-The output is a `DESIGN.md` superset your whole toolchain can read. Atoms stay sacred. Composition stays free. Numbers come from the script.
-
-<table>
-  <tr>
-    <td width="50%" align="center">
-      <a href="https://www.hyperframes.dev/design/biennale-yellow"><img src="https://static.heygen.ai/hyperframes-oss/docs/images/design-templates/biennale-yellow.png" alt="Biennale Yellow" width="100%"></a>
-      <br><b><a href="https://www.hyperframes.dev/design/biennale-yellow">Biennale Yellow</a></b>
-    </td>
-    <td width="50%" align="center">
-      <a href="https://www.hyperframes.dev/design/blockframe"><img src="https://static.heygen.ai/hyperframes-oss/docs/images/design-templates/blockframe.png" alt="BlockFrame" width="100%"></a>
-      <br><b><a href="https://www.hyperframes.dev/design/blockframe">BlockFrame</a></b>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <a href="https://www.hyperframes.dev/design/blue-professional"><img src="https://static.heygen.ai/hyperframes-oss/docs/images/design-templates/blue-professional.png" alt="Blue Professional" width="100%"></a>
-      <br><b><a href="https://www.hyperframes.dev/design/blue-professional">Blue Professional</a></b>
-    </td>
-    <td width="50%" align="center">
-      <a href="https://www.hyperframes.dev/design/bold-poster"><img src="https://static.heygen.ai/hyperframes-oss/docs/images/design-templates/bold-poster.png" alt="Bold Poster" width="100%"></a>
-      <br><b><a href="https://www.hyperframes.dev/design/bold-poster">Bold Poster</a></b>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <a href="https://www.hyperframes.dev/design/broadside"><img src="https://static.heygen.ai/hyperframes-oss/docs/images/design-templates/broadside.png" alt="Broadside" width="100%"></a>
-      <br><b><a href="https://www.hyperframes.dev/design/broadside">Broadside</a></b>
-    </td>
-    <td width="50%" align="center">
-      <a href="https://www.hyperframes.dev/design/capsule"><img src="https://static.heygen.ai/hyperframes-oss/docs/images/design-templates/capsule.png" alt="Capsule" width="100%"></a>
-      <br><b><a href="https://www.hyperframes.dev/design/capsule">Capsule</a></b>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <a href="https://www.hyperframes.dev/design/cartesian"><img src="https://static.heygen.ai/hyperframes-oss/docs/images/design-templates/cartesian.png" alt="Cartesian" width="100%"></a>
-      <br><b><a href="https://www.hyperframes.dev/design/cartesian">Cartesian</a></b>
-    </td>
-    <td width="50%" align="center">
-      <a href="https://www.hyperframes.dev/design/cobalt-grid"><img src="https://static.heygen.ai/hyperframes-oss/docs/images/design-templates/cobalt-grid.png" alt="Cobalt Grid" width="100%"></a>
-      <br><b><a href="https://www.hyperframes.dev/design/cobalt-grid">Cobalt Grid</a></b>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <a href="https://www.hyperframes.dev/design/coral"><img src="https://static.heygen.ai/hyperframes-oss/docs/images/design-templates/coral.png" alt="Coral" width="100%"></a>
-      <br><b><a href="https://www.hyperframes.dev/design/coral">Coral</a></b>
-    </td>
-    <td width="50%" align="center">
-      <a href="https://www.hyperframes.dev/design/creative-mode"><img src="https://static.heygen.ai/hyperframes-oss/docs/images/design-templates/creative-mode.png" alt="Creative Mode" width="100%"></a>
-      <br><b><a href="https://www.hyperframes.dev/design/creative-mode">Creative Mode</a></b>
-    </td>
-  </tr>
-</table>
-
-Browse and remix them all at [hyperframes.dev/design](https://www.hyperframes.dev/design).
-
-## How It Works
-
-Define a video as HTML. Add data attributes for timing and tracks. Use GSAP, CSS, Lottie, Three.js, Anime.js, WAAPI, or your own frame adapter for seekable animation.
+Compositions are ordinary HTML files. The root element declares a finite canvas; media and visual elements use `data-start`, `data-duration`, `data-track-index`, and `class="clip"`; seekable animation timelines are paused and registered on `window.__timelines`.
 
 ```html
 <div id="stage" data-composition-id="launch" data-start="0" data-width="1920" data-height="1080">
-  <video
-    class="clip"
-    data-start="0"
-    data-duration="6"
-    data-track-index="0"
-    src="intro.mp4"
-    muted
-    playsinline
-  ></video>
-
   <h1 id="title" class="clip" data-start="1" data-duration="4" data-track-index="1">Launch day</h1>
-
-  <audio
-    data-start="0"
-    data-duration="6"
-    data-track-index="2"
-    data-volume="0.5"
-    src="music.wav"
-  ></audio>
-
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
   <script>
     const tl = gsap.timeline({ paused: true });
     tl.from("#title", { opacity: 0, y: 40, duration: 0.8 }, 1);
@@ -217,116 +89,102 @@ Define a video as HTML. Add data attributes for timing and tracks. Use GSAP, CSS
 </div>
 ```
 
-Preview instantly in the browser. Render locally or in Docker. The renderer seeks each frame in headless Chrome and encodes the result with FFmpeg, so the same input produces the same video.
+The example pins GSAP to the version used by the blank template. A composition's finite duration comes from its registered timeline. Prefer local, versioned assets for production and CI; render-time network fetches, wall-clock APIs (`Date.now()`, `requestAnimationFrame`, and unseeded timers), and unseeded randomness undermine reproducibility. Output parameters such as FPS and dimensions are fixed before capture.
 
-## HyperFrames Stack
+## Rendering targets
 
-HyperFrames is the open-source rendering engine, plus a growing set of tools around HTML-native video creation.
+Choose the target that matches your workflow. Cloud accounts, billing, credentials, and deployment side effects are prerequisites for the managed targets; they are not part of a local smoke test.
 
-| Piece                                           | Status              | What it does                                                                                      |
-| ----------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------- |
-| CLI                                             | Available           | Scaffold, preview, lint, inspect, and render local video projects                                 |
-| Core / Engine / Producer                        | Available           | Parse compositions, drive headless Chrome, encode video, and mix audio                            |
-| Catalog                                         | Available           | Reusable blocks and components for transitions, overlays, captions, charts, maps, and effects     |
-| Agent skills                                    | Available           | Teach coding agents the video-production patterns that generic web docs miss                      |
-| Studio                                          | Available, evolving | Browser surface for previewing and editing compositions                                           |
-| AWS Lambda rendering                            | Available           | Deploy a distributed render stack and drive renders from your laptop or CI                        |
-| [hyperframes.dev](https://www.hyperframes.dev/) | Available           | Community playground for previewing, iterating, sharing, and rendering HTML-native video projects |
-| [frame.md](https://www.hyperframes.dev/design)  | Available           | Invert your design system for the camera — a DESIGN.md superset an agent can compose video from   |
+| Target               | Command or package                                                                                                                 | What it provides                                                                          |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Local                | `hyperframes render`                                                                                                               | Fast authoring loop using headless Chrome and FFmpeg on the current machine.              |
+| Docker               | `hyperframes render --docker`                                                                                                      | A pinned Chrome/font/FFmpeg environment for the closest local reproducibility.            |
+| HeyGen managed cloud | `hyperframes auth login` then `hyperframes cloud render`                                                                           | Upload, render, poll, and download without operating Chrome or FFmpeg; billed per credit. |
+| AWS                  | `hyperframes lambda deploy` / `hyperframes lambda render`; [`@hyperframes/aws-lambda`](packages/aws-lambda/package.json)           | Bring-your-own AWS distributed rendering with S3 and Step Functions.                      |
+| Google Cloud         | `hyperframes cloudrun deploy` / `hyperframes cloudrun render`; [`@hyperframes/gcp-cloud-run`](packages/gcp-cloud-run/package.json) | Bring-your-own Cloud Run + Workflows rendering with Google Cloud Storage.                 |
+
+For local renders, frozen assets, dependencies, fonts, browser, FFmpeg, and environment are part of the reproducibility boundary. Docker narrows those variables; a non-Docker run can still differ across operating systems because of platform font and Chrome behavior. See [Deterministic Rendering](docs/concepts/determinism.mdx), [Cloud Rendering](docs/deploy/cloud.mdx), [AWS Lambda](docs/deploy/aws-lambda.mdx), and [Google Cloud Run](docs/deploy/gcp-cloud-run.mdx) before running a cloud command.
+
+## What you can build
+
+HyperFrames supports product launches, PR walkthroughs, data visualizations, social clips with captions and music, docs/website explainers, and reusable motion graphics. Browse the [Showcase](https://hyperframes.heygen.com/showcase) for projects you can watch and remix.
+
+The tracked registry currently contains 100+ blocks and 25 components. Counts change as the catalog grows; use [`registry/blocks`](registry/blocks), [`registry/components`](registry/components), and the [online catalog](https://hyperframes.heygen.com/catalog) as the authoritative inventory.
+
+Optional integrations can import Figma assets, tokens, and storyboard frames as reconstructed motion (frames are states, not static slides); keep those integrations on their own dependency and credential boundary.
+
+## HyperFrames stack and packages
+
+The repository is a Bun workspace. The root [workspace manifest](package.json) and each linked package manifest are the authoritative package inventory; the family summary below intentionally avoids copying a second, exhaustive list.
+
+| Family               | Stable surface                           | Manifest sources                                                                                                                                              |
+| -------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Authoring            | CLI, Studio, and SDKs                    | [`@hyperframes/cli`](packages/cli/package.json), [`@hyperframes/studio`](packages/studio/package.json), [`@hyperframes/sdk`](packages/sdk/package.json)       |
+| Composition runtime  | Core types/runtime, parsers, and linting | [`@hyperframes/core`](packages/core/package.json), [`@hyperframes/parsers`](packages/parsers/package.json), [`@hyperframes/lint`](packages/lint/package.json) |
+| Local rendering      | Capture engine and producer/encoder      | [`@hyperframes/engine`](packages/engine/package.json), [`@hyperframes/producer`](packages/producer/package.json)                                              |
+| Integrations         | Distributed AWS and GCP adapters         | [`@hyperframes/aws-lambda`](packages/aws-lambda/package.json), [`@hyperframes/gcp-cloud-run`](packages/gcp-cloud-run/package.json)                            |
+| Playback and effects | Embeddable player and shader transitions | [`@hyperframes/player`](packages/player/package.json), [`@hyperframes/shader-transitions`](packages/shader-transitions/package.json)                          |
+
+Other workspace packages, including `@hyperframes/studio-server`, are listed in `packages/*/package.json` and published according to their own manifests.
 
 ## Catalog
 
-Install ready-to-use blocks and components:
+Install a registry item into a project with the CLI:
 
 ```bash
-npx hyperframes add flash-through-white   # shader transition
-npx hyperframes add instagram-follow      # social overlay
-npx hyperframes add data-chart            # animated chart
+npx hyperframes catalog                  # parseable table
+npx hyperframes catalog --json           # machine-readable inventory
+npx hyperframes add flash-through-white  # install a shader transition
 ```
-
-Browse the catalog at [hyperframes.heygen.com/catalog](https://hyperframes.heygen.com/catalog/blocks/data-chart).
 
 ## Why HyperFrames?
 
-- **HTML-native:** compositions are HTML files with data attributes. No React requirement, no proprietary timeline format.
-- **Agent-friendly:** agents already write HTML, and the CLI is non-interactive by default.
-- **Deterministic:** same input, same frames, same output. Built for CI, regression tests, and automated rendering.
-- **No build step:** an `index.html` composition plays as-is and can be previewed directly in the browser.
-- **Adapter-based animation:** bring GSAP, CSS animations, Lottie, Three.js, Anime.js, WAAPI, or a custom runtime.
-- **Open source:** Apache 2.0 license, with no per-render fees or commercial-use thresholds.
+- **HTML-native:** no React requirement or proprietary timeline format.
+- **Agent-friendly:** plain HTML, explicit flags, JSON-capable diagnostics, and a documented `--non-interactive` path for commands that otherwise prompt.
+- **Seek-driven:** the renderer positions every frame through the runtime adapter rather than relying on real-time playback.
+- **Adapter-based animation:** use GSAP, CSS, Lottie, Three.js, Anime.js, WAAPI, or a custom frame adapter.
+- **Open source:** Apache 2.0, with the package and deployment surfaces defined in tracked manifests.
 
-## HyperFrames vs Remotion
+## HyperFrames vs. Remotion
 
-HyperFrames is inspired by [Remotion](https://www.remotion.dev). Both tools render video with headless Chrome and FFmpeg. The main difference is the authoring model: Remotion's bet is React components; HyperFrames' bet is plain HTML that humans and agents can both write easily.
+HyperFrames is inspired by [Remotion](https://www.remotion.dev). Both render through headless Chrome and FFmpeg, but HyperFrames composes plain HTML while Remotion composes React components. HyperFrames has local, Docker, managed-cloud, AWS, and GCP adapters; choose the target that matches your infrastructure. See the [full comparison](https://hyperframes.heygen.com/guides/hyperframes-vs-remotion).
 
-|                          | **HyperFrames**                       | **Remotion**                            |
-| ------------------------ | ------------------------------------- | --------------------------------------- |
-| Authoring                | HTML + CSS + seekable animation       | React components                        |
-| Build step               | None; `index.html` plays as-is        | Bundler required                        |
-| Agent handoff            | Plain HTML files                      | JSX / React project                     |
-| Library-clock animations | Seekable, frame-accurate via adapters | Wall-clock animation patterns need care |
-| Distributed rendering    | Local and AWS Lambda render paths     | Remotion Lambda, mature cloud renderer  |
-| License                  | Apache 2.0                            | Source-available Remotion License       |
+## Testing and contributing
 
-Read the full comparison in the [HyperFrames vs Remotion guide](https://hyperframes.heygen.com/guides/hyperframes-vs-remotion).
+Contributors use Bun (not pnpm) and Node.js 22+:
 
-## Documentation
+```bash
+bun install --frozen-lockfile
+bun run build
+bun run verify:packed-manifests
+bun run lint
+bun run format:check
+bun run --filter '*' typecheck
+bun run test:scripts
+bun run test:skills
+bun run --filter '!@hyperframes/producer' test
+cd docs && npx mint validate && npx mint broken-links
+```
 
-Full documentation: [hyperframes.heygen.com/introduction](https://hyperframes.heygen.com/introduction)
+The CI tiers mirror these commands: `ci.yml` runs change-filtered build, lint, typecheck, script/package tests, skills tests, and packed-manifest checks; `regression.yml` runs Docker producer shards when core/engine/producer code changes; `docs.yml` validates Mintlify docs and schema mirrors; and dedicated Windows, CodeQL, and catalog-preview workflows cover their own triggers. A README-only change does not claim to have exercised code paths whose workflow filters do not select it.
 
-- [Quickstart](https://hyperframes.heygen.com/quickstart)
-- [Showcase](https://hyperframes.heygen.com/showcase)
-- [Guides](https://hyperframes.heygen.com/guides/gsap-animation)
-- [API Reference](https://hyperframes.heygen.com/packages/core)
-- [Catalog](https://hyperframes.heygen.com/catalog/blocks/data-chart)
-- [Examples](https://hyperframes.heygen.com/examples)
-- [AWS Lambda rendering](https://hyperframes.heygen.com/deploy/aws-lambda)
+Run `npx hyperframes lint && npx hyperframes validate && npx hyperframes inspect` on a composition before previewing or rendering it. See [CONTRIBUTING.md](CONTRIBUTING.md) for review conventions and [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 
-## Packages
+### Compatibility
 
-| Package                                                          | Description                                                       |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------- |
-| [`hyperframes`](packages/cli)                                    | CLI for creating, previewing, linting, and rendering compositions |
-| [`@hyperframes/core`](packages/core)                             | Types, parsers, generators, linter, runtime, and frame adapters   |
-| [`@hyperframes/engine`](packages/engine)                         | Seekable page-to-video capture engine using Puppeteer and FFmpeg  |
-| [`@hyperframes/producer`](packages/producer)                     | Full rendering pipeline for capture, encode, and audio mix        |
-| [`@hyperframes/studio`](packages/studio)                         | Browser-based composition editor UI                               |
-| [`@hyperframes/player`](packages/player)                         | Embeddable `<hyperframes-player>` web component                   |
-| [`@hyperframes/shader-transitions`](packages/shader-transitions) | WebGL shader transitions for compositions                         |
-| [`@hyperframes/aws-lambda`](packages/aws-lambda)                 | AWS Lambda SDK and deployment surface for distributed renders     |
+Node.js 22+ is required for the CLI and workspace tools. FFmpeg and FFprobe are required for local encoding and media inspection; Docker is optional but recommended when pixel-level reproducibility matters. The CLI supports macOS, Linux, and Windows paths, while cloud adapters additionally require their provider credentials and tooling. Preview can differ from render performance, and non-Docker pixels can vary with the host Chrome and fonts even when the composition is unchanged.
 
-## Community
+## Git LFS and regression media
 
-HyperFrames is used in production at [HeyGen](https://www.heygen.com), with community examples from teams like [tldraw](https://tldraw.com), [TanStack](https://tanstack.com), and others in [ADOPTERS.md](ADOPTERS.md). Open a PR if your team is using HyperFrames.
+Golden regression-test media under `packages/producer/tests/**` is tracked with Git LFS by the patterns in [.gitattributes](.gitattributes). A clone without Git LFS may contain pointer files rather than hydrated media; install Git LFS and run `git lfs install` plus `git lfs pull` when you need local baselines. CI's regression workflow checks out with LFS enabled and verifies that the media are real files before rendering. Source-only work can skip hydration with `GIT_LFS_SKIP_SMUDGE=1`.
 
+## Documentation and community
+
+- [Introduction and quickstart](https://hyperframes.heygen.com/introduction) · [Rendering guide](https://hyperframes.heygen.com/guides/rendering) · [CLI reference](https://hyperframes.heygen.com/packages/cli)
+- [Showcase](https://hyperframes.heygen.com/showcase) · [Catalog](https://hyperframes.heygen.com/catalog) · [Playground](https://www.hyperframes.dev/)
 - Questions and ideas: [Discord](https://discord.gg/EbK98HBPdk)
 - Bugs and feature requests: [GitHub Issues](https://github.com/heygen-com/hyperframes/issues)
-- Security reports: [SECURITY.md](SECURITY.md)
-- Contributions: [CONTRIBUTING.md](CONTRIBUTING.md)
-
-## Development Note
-
-The repo uses [Git LFS](https://git-lfs.com) for golden regression-test baselines under `packages/producer/tests/**/output.mp4` (about 240 MB of `.mp4` files). If you're cloning the full repo for development, install Git LFS first:
-
-```bash
-# macOS
-brew install git-lfs
-
-# Ubuntu / Debian
-sudo apt install git-lfs
-
-# Windows
-winget install GitHub.GitLFS
-
-# Then, once per machine
-git lfs install
-```
-
-If you only need source files, you can skip LFS content:
-
-```bash
-GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/heygen-com/hyperframes.git
-```
+- Community examples: [ADOPTERS.md](ADOPTERS.md)
 
 ## License
 
