@@ -78,7 +78,12 @@ jobs:
     name: Render on windows-latest
     needs: [changes, preflight]
     if: needs.changes.outputs.code == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: blacksmith-4vcpu-windows-2025
+    # Stays on the GitHub-hosted Windows image. The FFmpeg builds we install
+    # import avicap32.dll / msvfw32.dll (Video for Windows), which only ship
+    # with the Desktop Experience; on leaner Windows images ffmpeg.exe fails to
+    # load entirely with 0xC0000135 (STATUS_DLL_NOT_FOUND), so this whole
+    # FFmpeg-on-Windows verification cannot run there.
+    runs-on: windows-latest
     timeout-minutes: 30
 
     steps:
@@ -379,7 +384,10 @@ jobs:
     name: Tests on windows-latest
     needs: [changes, preflight]
     if: needs.changes.outputs.code == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: blacksmith-4vcpu-windows-2025
+    # Same avicap32.dll / Desktop Experience constraint as `render-windows`
+    # above: this job installs FFmpeg so the HAS_FFMPEG-gated suites actually
+    # run, so it needs the GitHub-hosted Windows image too.
+    runs-on: windows-latest
     timeout-minutes: 20
 
     steps:
