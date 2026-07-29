@@ -57,4 +57,15 @@ runs:
         Add-Content -Path $env:GITHUB_PATH -Value $bin.Directory.FullName
 
         Write-Host "--- ffmpeg sanity check ---"
-        & $bin.FullName -version | Select-Object -First 1
+        # Capture the full output and assert on the exit code explicitly.
+        # Piping straight into `Select-Object -First 1` stops the upstream
+        # pipeline, which closes ffmpeg's stdout while it is still writing its
+        # banner: ffmpeg then dies on the broken pipe and the step fails with a
+        # bare `exit code 1` and no output at all. That race is timing
+        # dependent, so it passed on some runners and failed on others.
+        $version = & $bin.FullName -version 2>&1
+        $ffmpegExit = $LASTEXITCODE
+        if ($version) { $version | Select-Object -First 1 | Write-Host }
+        if ($ffmpegExit -ne 0) {
+          throw "ffmpeg -version failed with exit code $ffmpegExit"
+        }
