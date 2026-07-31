@@ -28,7 +28,7 @@ permissions:
 jobs:
   sync:
     name: Publish changed skills
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     env:
       CLAWHUB_DISABLE_TELEMETRY: "1"

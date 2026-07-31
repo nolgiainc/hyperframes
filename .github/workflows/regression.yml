@@ -24,7 +24,7 @@ concurrency:
 jobs:
   changes:
     name: Detect changes
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 2
     outputs:
       code: ${{ steps.filter.outputs.code }}
@@ -50,7 +50,7 @@ jobs:
     name: Preflight (lint + format)
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -59,7 +59,7 @@ jobs:
   regression-shards:
     needs: [changes, preflight]
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 60
     strategy:
       fail-fast: true
@@ -141,7 +141,7 @@ jobs:
 
   # Summary job — matches the required check name in branch protection
   regression:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [changes, regression-shards]
     if: always()
     steps:
